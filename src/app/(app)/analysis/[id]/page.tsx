@@ -9,8 +9,9 @@ import {
   Calendar, IndianRupee, FileText, Users, AlertCircle, Clock,
   ExternalLink, Target, TrendingUp, ShieldAlert, Zap,
   Download, FolderArchive, FileDown, Phone, Mail, MapPin, User,
-  RefreshCw, Sparkles,
+  RefreshCw, Sparkles, UserCheck, Send, X,
 } from 'lucide-react';
+import { useSession } from 'next-auth/react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { Tender, TenderL2Analysis, TenderDocument } from '@/types';
 
@@ -47,14 +48,18 @@ function Section({
 }
 
 /* ── Info row ────────────────────────────────────────────────── */
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+function InfoRow({ label, value, highlight, highlightColor = '#16a34a' }: {
+  label: string; value: React.ReactNode; highlight?: boolean; highlightColor?: string;
+}) {
   const isEmpty = !value || value === '—' || value === 'Not mentioned';
   return (
     <div className="flex gap-3 py-2.5" style={{ borderBottom: '1px solid #f8fafc' }}>
       <span className="text-[12px] w-36 flex-shrink-0 font-medium" style={{ color: '#94a3b8' }}>
         {label}
       </span>
-      <span className="text-[12.5px] flex-1" style={{ color: isEmpty ? '#cbd5e1' : '#0f172a' }}>
+      <span className="text-[12.5px] flex-1 font-medium" style={{
+        color: isEmpty ? '#cbd5e1' : highlight ? highlightColor : '#0f172a',
+      }}>
         {value || '—'}
       </span>
     </div>
@@ -151,7 +156,6 @@ function DocumentsPanel({ tenderId, detailUrl }: { tenderId: number; detailUrl: 
   }
 
   const summaryPdf = docs.find(d => d.docType === 'summary_pdf');
-  const fullDocs   = docs.find(d => d.docType === 'full_docs_zip');
 
   return (
     <Section title="Tender Documents" icon={FileDown} accentColor="#0284c7" delay={0.1}>
@@ -211,29 +215,32 @@ function DocumentsPanel({ tenderId, detailUrl }: { tenderId: number; detailUrl: 
               )}
             </div>
           )}
-          {fullDocs?.downloadUrl && (
+          {/* Show individual docs that have a local file downloaded */}
+          {docs.filter(d => d.docType !== 'summary_pdf' && d.filePath).map(doc => (
             <div
+              key={doc.id}
               className="flex items-center justify-between p-3.5 rounded-xl"
               style={{ background: 'rgba(22,163,74,0.04)', border: '1px solid rgba(22,163,74,0.15)' }}
             >
               <div className="flex items-center gap-3">
                 <FolderArchive className="w-7 h-7 flex-shrink-0" style={{ color: '#16a34a' }} />
                 <div>
-                  <p className="text-[13px] font-medium" style={{ color: '#0f172a' }}>All Government Documents</p>
-                  <p className="text-[11.5px]" style={{ color: '#94a3b8' }}>NIT, BOQ, drawings & annexures (ZIP)</p>
+                  <p className="text-[13px] font-medium" style={{ color: '#0f172a' }}>{doc.fileName}</p>
+                  <p className="text-[11.5px]" style={{ color: '#94a3b8' }}>
+                    {doc.fileSize ? `${Math.round(doc.fileSize / 1024)} KB` : 'Tender document'}
+                  </p>
                 </div>
               </div>
               <a
-                href={fullDocs.downloadUrl}
-                target="_blank"
-                rel="noopener noreferrer"
+                href={doc.filePath!}
+                download={doc.fileName}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11.5px] font-semibold transition-opacity hover:opacity-80"
                 style={{ background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#16a34a' }}
               >
-                <Download className="w-3 h-3" /> Download ZIP
+                <Download className="w-3 h-3" /> Download
               </a>
             </div>
-          )}
+          ))}
           {detailUrl && (
             <a
               href={detailUrl}
@@ -321,14 +328,188 @@ function ContactSection({
   );
 }
 
+/* ── Assign Owner Modal ──────────────────────────────────────── */
+function AssignOwnerModal({
+  tenderId,
+  currentOwner,
+  onClose,
+  onSuccess,
+}: {
+  tenderId: number;
+  currentOwner: string | null;
+  onClose: () => void;
+  onSuccess: (email: string) => void;
+}) {
+  const [email, setEmail]     = useState(currentOwner || '');
+  const [sending, setSending] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+  const [sent, setSent]       = useState(false);
+
+  async function handleSend() {
+    setError(null);
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed) { setError('Please enter an email address.'); return; }
+    if (!trimmed.endsWith('@glasswing.in')) {
+      setError('Only @glasswing.in email addresses are allowed.');
+      return;
+    }
+
+    setSending(true);
+    try {
+      const res = await fetch(`/api/tenders/${tenderId}/assign-owner`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assigneeEmail: trimmed }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to send');
+      setSent(true);
+      setTimeout(() => { onSuccess(trimmed); onClose(); }, 2000);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)' }}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 12 }}
+          transition={{ type: 'spring', bounce: 0.2, duration: 0.35 }}
+          className="w-full max-w-md rounded-2xl overflow-hidden"
+          style={{ background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid #f1f5f9', background: 'rgba(124,58,237,0.03)' }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.15)' }}>
+                <UserCheck className="w-4 h-4" style={{ color: '#7c3aed' }} />
+              </div>
+              <div>
+                <p className="text-[13.5px] font-bold" style={{ color: '#0f172a' }}>Assign Ownership</p>
+                <p className="text-[11px]" style={{ color: '#94a3b8' }}>
+                  {currentOwner ? `Currently: ${currentOwner}` : 'No owner assigned yet'}
+                </p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-1.5 rounded-lg transition-colors hover:bg-slate-100">
+              <X className="w-4 h-4" style={{ color: '#94a3b8' }} />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-5">
+            {sent ? (
+              <div className="flex flex-col items-center gap-3 py-4">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center"
+                  style={{ background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)' }}>
+                  <CheckCircle2 className="w-6 h-6" style={{ color: '#16a34a' }} />
+                </div>
+                <p className="text-[14px] font-semibold text-center" style={{ color: '#0f172a' }}>
+                  Email sent successfully!
+                </p>
+                <p className="text-[12px] text-center" style={{ color: '#64748b' }}>
+                  Tender assigned to <strong>{email}</strong>.<br />
+                  A Gemini-written email has been sent from your Outlook.
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="text-[12.5px] mb-4" style={{ color: '#64748b' }}>
+                  Enter the <strong>@glasswing.in</strong> email of the clerk who will work on this tender.
+                  Gemini will write a professional email and send it from your Outlook account.
+                </p>
+
+                <label className="block text-[11.5px] font-semibold mb-1.5" style={{ color: '#64748b' }}>
+                  Clerk Email Address
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); setError(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSend(); }}
+                  placeholder="clerk@glasswing.in"
+                  disabled={sending}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-[13px] outline-none transition-all disabled:opacity-50"
+                  style={{
+                    border: error ? '1px solid rgba(239,68,68,0.5)' : '1px solid #e2e8f0',
+                    background: '#f8fafc',
+                    color: '#0f172a',
+                  }}
+                  onFocus={e => (e.target.style.borderColor = '#7c3aed')}
+                  onBlur={e => (e.target.style.borderColor = error ? 'rgba(239,68,68,0.5)' : '#e2e8f0')}
+                />
+
+                {error && (
+                  <p className="flex items-center gap-1.5 text-[11.5px] mt-2" style={{ color: '#dc2626' }}>
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {error}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-2.5 mt-5">
+                  <button
+                    onClick={onClose}
+                    className="flex-1 py-2.5 rounded-xl text-[13px] font-medium transition-colors"
+                    style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                    onMouseLeave={e => (e.currentTarget.style.background = '#f8fafc')}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSend}
+                    disabled={sending}
+                    className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all disabled:opacity-60"
+                    style={{
+                      background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+                      boxShadow: '0 2px 12px rgba(124,58,237,0.35)',
+                    }}
+                  >
+                    {sending ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Sending…</>
+                    ) : (
+                      <><Send className="w-3.5 h-3.5" /> Send via Outlook</>
+                    )}
+                  </button>
+                </div>
+
+                <p className="text-[10.5px] mt-3 text-center" style={{ color: '#cbd5e1' }}>
+                  Email is composed by Gemini AI and sent from your Outlook account
+                </p>
+              </>
+            )}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 /* ── Main Page ───────────────────────────────────────────────── */
 export default function AnalysisDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const { data: session }       = useSession();
   const [tender, setTender]     = useState<Tender | null>(null);
   const [loading, setLoading]   = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [docsKey, setDocsKey]   = useState(0);
+  const [showOwnerModal, setShowOwnerModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
 
   useEffect(() => {
     fetch(`/api/tenders/${id}`)
@@ -336,6 +517,20 @@ export default function AnalysisDetailPage() {
       .then(json => setTender(json.data))
       .finally(() => setLoading(false));
   }, [id]);
+
+  async function checkForUpdates() {
+    if (!tender) return;
+    setRefreshing(true); setRefreshMsg(null);
+    try {
+      const res = await fetch(`/api/tenders/${id}/fetch-overview`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Refresh failed');
+      const updated = await fetch(`/api/tenders/${id}`).then(r => r.json());
+      setTender(updated.data);
+      setRefreshMsg(json.message || 'Refreshed.');
+    } catch (err) { setRefreshMsg((err as Error).message); }
+    finally { setRefreshing(false); }
+  }
 
   async function runAnalysis() {
     if (!tender) return;
@@ -369,11 +564,23 @@ export default function AnalysisDetailPage() {
     </div>
   );
 
-  const analysis: TenderL2Analysis | null = tender.l2Analysis;
+  // Normalize array fields in case the AI stored a string instead of an array
+  const _toArr = (v: unknown): string[] =>
+    Array.isArray(v) ? (v as string[]).filter(Boolean)
+    : (typeof v === 'string' && v.trim() ? [v.trim()] : []);
+  const raw = tender.l2Analysis;
+  const analysis: TenderL2Analysis | null = raw ? {
+    ...raw,
+    keyRisks:              _toArr(raw.keyRisks),
+    keyTermsAndConditions: _toArr(raw.keyTermsAndConditions),
+    relevantBusinessLines: _toArr(raw.relevantBusinessLines),
+    otherNotableTakeaways: _toArr(raw.otherNotableTakeaways),
+  } : null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const overview = tender.tenderOverview as any;
 
   return (
+    <>
     <div className="p-8 max-w-4xl mx-auto">
 
       {/* Back */}
@@ -427,7 +634,7 @@ export default function AnalysisDetailPage() {
             </div>
           </div>
 
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 flex flex-col items-end gap-2">
             {!tender.l2Analyzed ? (
               <button
                 onClick={runAnalysis}
@@ -438,7 +645,7 @@ export default function AnalysisDetailPage() {
                 {analyzing ? 'Analyzing…' : 'Run AI Analysis'}
               </button>
             ) : (
-              <div className="flex flex-col items-end gap-2">
+              <>
                 <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11.5px] font-semibold"
                   style={{ background: 'rgba(22,163,74,0.07)', border: '1px solid rgba(22,163,74,0.18)', color: '#16a34a' }}>
                   <Sparkles className="w-3.5 h-3.5" /> Analyzed
@@ -453,7 +660,50 @@ export default function AnalysisDetailPage() {
                 >
                   <RefreshCw className={`w-3 h-3 ${analyzing ? 'animate-spin' : ''}`} /> Re-analyze
                 </button>
-              </div>
+                <button
+                  onClick={checkForUpdates}
+                  disabled={refreshing}
+                  className="flex items-center gap-1 text-[11.5px] transition-colors"
+                  style={{ color: '#94a3b8' }}
+                  onMouseEnter={e => (e.currentTarget.style.color = '#0284c7')}
+                  onMouseLeave={e => (e.currentTarget.style.color = '#94a3b8')}
+                  title="Re-scrape T247 detail page to detect corrigendum / date extensions"
+                >
+                  <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
+                  {refreshing ? 'Checking…' : 'Check Updates'}
+                </button>
+                {refreshMsg && (
+                  <p className="text-[10.5px] text-right max-w-[160px]"
+                    style={{ color: refreshMsg.toLowerCase().includes('corrigendum') ? '#d97706' : '#64748b' }}>
+                    {refreshMsg}
+                  </p>
+                )}
+              </>
+            )}
+
+            {/* Assign Owner button — shown whenever there's an analysis */}
+            {tender.l2Analyzed && (
+              <button
+                onClick={() => setShowOwnerModal(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[12px] font-semibold transition-all"
+                style={{
+                  background: tender.ownerEmail ? 'rgba(124,58,237,0.07)' : 'rgba(124,58,237,0.05)',
+                  border: `1px solid ${tender.ownerEmail ? 'rgba(124,58,237,0.25)' : 'rgba(124,58,237,0.15)'}`,
+                  color: '#7c3aed',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(124,58,237,0.1)')}
+                onMouseLeave={e => (e.currentTarget.style.background = tender.ownerEmail ? 'rgba(124,58,237,0.07)' : 'rgba(124,58,237,0.05)')}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                {tender.ownerEmail ? 'Reassign Owner' : 'Assign Owner'}
+              </button>
+            )}
+
+            {/* Current owner display */}
+            {tender.ownerEmail && (
+              <p className="text-[10.5px] text-right" style={{ color: '#94a3b8' }}>
+                Owner: <span style={{ color: '#7c3aed', fontWeight: 600 }}>{tender.ownerEmail}</span>
+              </p>
             )}
           </div>
         </div>
@@ -636,11 +886,12 @@ export default function AnalysisDetailPage() {
           {/* Financial + Schedule */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Section title="Financial Details" icon={IndianRupee} accentColor="#16a34a" delay={0.2}>
-              <InfoRow label="EMD"           value={analysis.emdAmount} />
-              <InfoRow label="PBG"           value={analysis.performanceBankGuarantee} />
-              <InfoRow label="Duration"      value={analysis.contractDuration} />
-              <InfoRow label="Consortium/JV" value={analysis.consortiumJv} />
-              <InfoRow label="Bid Method"    value={analysis.bidEvaluationProcess} />
+              <InfoRow label="EMD"             value={analysis.emdAmount} />
+              <InfoRow label="PBG"             value={analysis.performanceBankGuarantee} />
+              <InfoRow label="Duration"        value={analysis.contractDuration} />
+              <InfoRow label="Consortium/JV"   value={analysis.consortiumJv} highlight={/allowed/i.test(analysis.consortiumJv || '')} />
+              <InfoRow label="Reverse Auction" value={analysis.reverseAuction} highlight={/yes/i.test(analysis.reverseAuction || '')} highlightColor="#dc2626" />
+              <InfoRow label="Bid Method"      value={analysis.bidEvaluationProcess} />
             </Section>
             <Section title="Tender Schedule" icon={Calendar} accentColor="#7c3aed" delay={0.22}>
               <InfoRow label="Pre-Bid"    value={analysis.tenderSchedule?.preBidMeetings} />
@@ -710,5 +961,19 @@ export default function AnalysisDetailPage() {
         </div>
       )}
     </div>
+
+    {/* ── Assign Owner Modal ─────────────────────────────── */}
+    {showOwnerModal && (
+      <AssignOwnerModal
+        tenderId={tender.id}
+        currentOwner={tender.ownerEmail}
+        onClose={() => setShowOwnerModal(false)}
+        onSuccess={(email) => setTender(t => t ? { ...t, ownerEmail: email, ownerAssignedAt: new Date().toISOString() } : t)}
+      />
+    )}
+
+    {/* Suppress unused session warning */}
+    {session && null}
+    </>
   );
 }

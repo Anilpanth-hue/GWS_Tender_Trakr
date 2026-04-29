@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, Clock, X, Building2, MapPin,
   Calendar, DollarSign, FileText, Microscope, AlertCircle,
   ArrowRight, ChevronDown, ChevronUp, Zap, Loader2, Hash,
-  SlidersHorizontal,
+  SlidersHorizontal, Banknote,
 } from 'lucide-react';
 import { formatCurrency, formatDate, getDaysUntilDue, cn } from '@/lib/utils';
 import type { Tender, PaginatedResponse } from '@/types';
@@ -57,6 +57,30 @@ function L1Badge({ status }: { status: string }) {
   );
 }
 
+/* ── Expandable Summary Text ─────────────────────────────── */
+const SUMMARY_LIMIT = 220;
+
+function TenderSummaryText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const clean = text.replace(/\s+/g, ' ').trim();
+  const needsToggle = clean.length > SUMMARY_LIMIT;
+  const display = needsToggle && !expanded ? clean.slice(0, SUMMARY_LIMIT).trimEnd() + '…' : clean;
+  return (
+    <div>
+      <p className="text-[12.5px] leading-relaxed" style={{ color: '#475569' }}>{display}</p>
+      {needsToggle && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="mt-1.5 text-[11.5px] font-semibold transition-colors"
+          style={{ color: '#7c3aed' }}
+        >
+          {expanded ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /* ── Preview Panel ─────────────────────────────────────────── */
 function PreviewPanel({
   tender, onClose, onAccept, onReject, updating,
@@ -66,6 +90,14 @@ function PreviewPanel({
 }) {
   const { color: dateColor } = dueDateStyle(tender.dueDate);
   const days = getDaysUntilDue(tender.dueDate);
+
+  const overview = tender.tenderOverview;
+
+  // Derive description from title: split at " - " to get readable parts
+  const titleParts = tender.title.split(/\s+-\s+/);
+  const derivedDescription = titleParts.length > 1
+    ? titleParts.slice(1).join(' – ')
+    : tender.title;
 
   return (
     <div className="fixed inset-0 z-40 flex">
@@ -99,8 +131,26 @@ function PreviewPanel({
                 <DecisionBadge d={tender.l1Decision} />
               </div>
               <h2 className="text-[14.5px] font-semibold leading-snug capitalize" style={{ color: '#0f172a' }}>
-                {tender.title}
+                {titleParts[0]}
               </h2>
+              {(tender.issuedBy || tender.location) && (
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {tender.issuedBy && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11.5px] font-medium"
+                      style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.2)', color: '#0369a1' }}>
+                      <Building2 className="w-3 h-3 flex-shrink-0" />
+                      <span>{tender.issuedBy}</span>
+                    </div>
+                  )}
+                  {tender.location && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11.5px] font-medium"
+                      style={{ background: 'rgba(100,116,139,0.06)', border: '1px solid rgba(100,116,139,0.18)', color: '#475569' }}>
+                      <MapPin className="w-3 h-3 flex-shrink-0" />
+                      <span>{tender.location}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             <button
               onClick={onClose}
@@ -120,11 +170,13 @@ function PreviewPanel({
           {/* Key facts grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { icon: FileText,   label: 'Tender No',  value: tender.tenderNo, mono: true },
-              { icon: DollarSign, label: 'Est. Value',  value: tender.estimatedValue ? formatCurrency(tender.estimatedValue) : (tender.estimatedValueRaw || '—') },
-              { icon: Calendar,   label: 'Due Date',    value: formatDate(tender.dueDate) || '—',
+              { icon: FileText,   label: 'Tender No',       value: tender.tenderNo, mono: true },
+              { icon: DollarSign, label: 'Est. Value',       value: tender.estimatedValue ? formatCurrency(tender.estimatedValue) : (tender.estimatedValueRaw || '—') },
+              { icon: Calendar,   label: 'Submission Date',  value: formatDate(tender.dueDate) || '—',
                 sub: days !== null && days >= 0 ? `${days} days remaining` : undefined, color: dateColor },
-              { icon: MapPin,     label: 'Location',   value: tender.location || '—' },
+              { icon: MapPin,     label: 'Location',         value: tender.location || '—' },
+              { icon: Banknote,   label: 'EMD Value',        value: overview?.emdValue || '—' },
+              { icon: Clock,      label: 'Contract Period',  value: overview?.completionPeriod || '—' },
             ].map(({ icon: Icon, label, value, mono, sub, color }) => (
               <div
                 key={label}
@@ -141,6 +193,40 @@ function PreviewPanel({
                 {sub && <p className="text-[11px] mt-0.5" style={{ color: '#94a3b8' }}>{sub}</p>}
               </div>
             ))}
+          </div>
+
+          {/* Scope of Work / Description */}
+          <div className="rounded-xl p-4" style={{
+            background: tender.l1ScopeOfWork ? 'rgba(124,58,237,0.03)' : '#f8fafc',
+            border: `1px solid ${tender.l1ScopeOfWork ? 'rgba(124,58,237,0.15)' : '#e2e8f0'}`,
+          }}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: tender.l1ScopeOfWork ? 'rgba(124,58,237,0.6)' : '#94a3b8' }}>
+                Scope of Work
+              </p>
+              {tender.l1AnalysisSource === 'documents' && (
+                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                  style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#059669' }}>
+                  AI · from documents
+                </span>
+              )}
+            </div>
+            {tender.l1ScopeOfWork
+              ? <TenderSummaryText text={tender.l1ScopeOfWork} />
+              : overview?.fullSummaryText
+                ? <TenderSummaryText text={overview.fullSummaryText} />
+                : <p className="text-[12.5px] leading-relaxed capitalize" style={{ color: '#475569' }}>{derivedDescription}</p>
+            }
+            {tender.l1AnalysisSource === 'documents' && tender.tenderOverview?.eligibilityCriteria && (
+              <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(124,58,237,0.1)' }}>
+                <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'rgba(124,58,237,0.5)' }}>
+                  Eligibility (AI extracted)
+                </p>
+                <p className="text-[12px] leading-relaxed" style={{ color: '#475569' }}>
+                  {tender.tenderOverview.eligibilityCriteria}
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Issuing authority */}
@@ -712,10 +798,17 @@ function TendersContent() {
                       style={{ opacity: tender.l1Decision === 'rejected' ? 0.55 : 1 }}
                     >
                       <td className="max-w-[360px]">
-                        <p className="font-semibold leading-snug line-clamp-2 capitalize mb-1.5 text-[13.5px]"
+                        <p className="font-semibold leading-snug line-clamp-2 capitalize mb-1 text-[13.5px]"
                           style={{ color: '#0f172a' }}>
                           {tender.title}
                         </p>
+                        {(tender.issuedBy || tender.location) && (
+                          <p className="text-[11px] mb-1.5 truncate flex items-center gap-1" style={{ color: '#64748b' }}>
+                            {tender.issuedBy && <span className="truncate">{tender.issuedBy}</span>}
+                            {tender.issuedBy && tender.location && <span style={{ color: '#cbd5e1' }}>·</span>}
+                            {tender.location && <span className="truncate">{tender.location}</span>}
+                          </p>
+                        )}
                         <div className="flex flex-wrap gap-1">
                           {tender.l1QualificationReasons?.slice(0, 2).map((r, i) => (
                             <span key={i} className="text-[10.5px] px-1.5 py-0.5 rounded-md"

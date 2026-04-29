@@ -1,4 +1,3 @@
-import 'server-only';
 import mysql from 'mysql2/promise';
 
 const pool = mysql.createPool({
@@ -9,7 +8,8 @@ const pool = mysql.createPool({
   database: process.env.DB_DATABASE || 'tender_trakr',
   waitForConnections: true,
   connectionLimit: 10,
-  queueLimit: 0,
+  queueLimit: 50,
+  connectTimeout: 8000,
   timezone: '+00:00',
 });
 

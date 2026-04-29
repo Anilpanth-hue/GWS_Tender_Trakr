@@ -31,12 +31,16 @@ function mapTender(row: Record<string, unknown>): Tender {
     l1Status: row.l1_status as Tender['l1Status'],
     l1QualificationReasons: parseJsonColumn(row.l1_qualification_reasons) ?? [],
     l1ExclusionReason: row.l1_exclusion_reason as string | null,
+    l1ScopeOfWork: (row.l1_scope_of_work as string) || null,
+    l1AnalysisSource: (row.l1_analysis_source as 'documents' | 'metadata_only') || 'metadata_only',
     l1Decision: row.l1_decision as Tender['l1Decision'],
     l1DecisionReason: row.l1_decision_reason as string | null,
     l1DecisionBy: row.l1_decision_by as string | null,
     l1DecisionAt: row.l1_decision_at as string | null,
     l2Analyzed: Boolean(row.l2_analyzed),
     l2Analysis: parseJsonColumn(row.l2_analysis),
+    ownerEmail: (row.owner_email as string) || null,
+    ownerAssignedAt: (row.owner_assigned_at as string) || null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -90,12 +94,10 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // ── Import scraper + screening ────────────────────────────────────────────
-    const {
-      scrapeSingleTenderById, fetchTenderDocuments,
-      getBrowserInstance, closeBrowser,
-    } = await import('@/lib/scraper/tender247');
+    // ── Import scraper, screening, AI ─────────────────────────────────────────
+    const { scrapeSingleTenderById, closeBrowser } = await import('@/lib/scraper/tender247');
     const { screenTender, DEFAULT_CONFIG } = await import('@/lib/screening/rules');
+    const { analyzeL1 } = await import('@/lib/ai/l1-analyze');
 
     // ── Step 1: Scrape tender detail page ─────────────────────────────────────
     console.log(`[fetch-single] Scraping T247 #${t247Id}…`);
@@ -105,26 +107,61 @@ export async function POST(req: NextRequest) {
       t247Id
     );
 
-    // ── Step 2: L1 Screening ──────────────────────────────────────────────────
-    const screening = screenTender(rawTender, DEFAULT_CONFIG);
-    console.log(`[fetch-single] L1 result: ${screening.status}`);
+    // Browser no longer needed — documents are fetched at L2 time, not here
+    await closeBrowser();
 
-    // ── Step 3: Create scrape_run record ──────────────────────────────────────
+    // ── Step 2: Keyword pre-filter (instant gate) ─────────────────────────────
+    const screening = screenTender(rawTender, DEFAULT_CONFIG);
+    console.log(`[fetch-single] Keyword pre-filter: ${screening.status}`);
+
+    // ── Step 3: AI L1 on T247 detail page summary ─────────────────────────────
+    // The overview already has structured fields (EMD, contract period, scope,
+    // eligibility) scraped directly from the T247 AI Summary section.
+    const overviewText = [
+      `Tender No: ${t247Id}`,
+      overview.estimatedCost    && `Estimated Cost: ${overview.estimatedCost}`,
+      overview.emdValue         && `EMD Value: ${overview.emdValue}`,
+      overview.completionPeriod && `Completion Period: ${overview.completionPeriod}`,
+      overview.siteLocation     && `Site Location: ${overview.siteLocation}`,
+      overview.msmeExemption    && `MSME Exemption: ${overview.msmeExemption}`,
+      overview.startupExemption && `Startup Exemption: ${overview.startupExemption}`,
+      overview.jvConsortium     && `JV / Consortium: ${overview.jvConsortium}`,
+      overview.eligibilityCriteria && `\nEligibility Criteria:\n${overview.eligibilityCriteria}`,
+      overview.fullSummaryText  && `\nScope / AI Summary:\n${overview.fullSummaryText}`,
+    ].filter(Boolean).join('\n');
+
+    const docContents: Array<{ type: 'pdf_base64' | 'text'; content: string }> =
+      overviewText ? [{ type: 'text', content: overviewText }] : [];
+
+    const l1Result = await analyzeL1(rawTender.title, `Tender No: ${t247Id}`, docContents, screening);
+    console.log(`[fetch-single] AI L1: ${l1Result.status} (confidence: ${l1Result.confidence})`);
+
+    // Merge AI findings into the structured overview (T247 fields take priority)
+    const tenderOverview = {
+      ...overview,
+      emdValue:         overview.emdValue         || (l1Result.emdAmount      !== 'Not mentioned' ? l1Result.emdAmount      : ''),
+      completionPeriod: overview.completionPeriod || (l1Result.contractPeriod !== 'Not mentioned' ? l1Result.contractPeriod : ''),
+      eligibilityCriteria: overview.eligibilityCriteria || (l1Result.eligibilitySummary !== 'Not mentioned' ? l1Result.eligibilitySummary : ''),
+      fullSummaryText:  l1Result.scopeOfWork || overview.fullSummaryText || '',
+    };
+
+    // ── Step 4: Create scrape_run record ──────────────────────────────────────
     const runResult = await execute(
       `INSERT INTO scrape_runs (session, status, total_found, total_qualified, total_rejected, completed_at)
        VALUES ('manual', 'completed', 1, ?, ?, NOW())`,
-      [screening.status === 'qualified' ? 1 : 0, screening.status === 'rejected' ? 1 : 0]
+      [l1Result.status === 'qualified' ? 1 : 0, l1Result.status === 'rejected' ? 1 : 0]
     );
     const scrapeRunId = runResult.insertId;
 
-    // ── Step 4: Save tender (decision = pending, user reviews in L1) ──────────
+    // ── Step 5: Save tender (decision = pending, user reviews in L1) ──────────
     const insertResult = await execute(
       `INSERT INTO tenders
          (scrape_run_id, title, tender_no, issued_by, estimated_value, estimated_value_raw,
           due_date, published_date, location, category, detail_url, source_session,
-          l1_status, l1_qualification_reasons, l1_exclusion_reason, tender_overview,
-          l1_decision)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
+          l1_status, l1_qualification_reasons, l1_exclusion_reason,
+          l1_scope_of_work, l1_analysis_source,
+          tender_overview, l1_decision)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [
         scrapeRunId,
         rawTender.title, rawTender.tenderNo, rawTender.issuedBy,
@@ -132,51 +169,16 @@ export async function POST(req: NextRequest) {
         rawTender.dueDate, rawTender.publishedDate,
         rawTender.location, rawTender.category,
         rawTender.detailUrl, rawTender.sourceSession,
-        screening.status,
-        JSON.stringify(screening.qualificationReasons),
-        screening.exclusionReason,
-        JSON.stringify(overview),
+        l1Result.status,
+        JSON.stringify(l1Result.status === 'qualified' ? l1Result.qualificationReasons : []),
+        l1Result.rejectionReason,
+        l1Result.scopeOfWork || null,
+        l1Result.analysisSource,
+        JSON.stringify(tenderOverview),
       ]
     );
     const tenderId = insertResult.insertId;
     console.log(`[fetch-single] Saved tender #${tenderId}`);
-
-    // ── Step 5: Download documents SYNCHRONOUSLY ──────────────────────────────
-    // The browser is still logged-in from step 1 — reuse it to download docs.
-    try {
-      const browser = getBrowserInstance();
-      if (browser && rawTender.detailUrl) {
-        console.log(`[fetch-single] Downloading documents for #${tenderId}…`);
-        const docs = await fetchTenderDocuments(browser, tenderId, rawTender.detailUrl);
-
-        if (docs.pdfFileName && docs.pdfPublicPath) {
-          await execute(
-            `INSERT INTO tender_documents (tender_id, file_name, file_path, doc_type, file_size)
-             VALUES (?, ?, ?, 'summary_pdf', ?)
-             ON DUPLICATE KEY UPDATE file_path = VALUES(file_path), file_size = VALUES(file_size)`,
-            [tenderId, docs.pdfFileName, docs.pdfPublicPath, docs.pdfFileSize]
-          );
-          console.log(`[fetch-single] ✓ PDF saved: ${docs.pdfFileName}`);
-        }
-
-        if (docs.fullDocsUrl) {
-          await execute(
-            `INSERT INTO tender_documents (tender_id, file_name, download_url, doc_type)
-             VALUES (?, 'All Tender Documents', ?, 'full_docs_zip')
-             ON DUPLICATE KEY UPDATE download_url = VALUES(download_url)`,
-            [tenderId, docs.fullDocsUrl]
-          );
-          console.log(`[fetch-single] ✓ Full docs URL saved`);
-        }
-      } else {
-        console.warn(`[fetch-single] Browser not available for doc download`);
-      }
-    } catch (docErr) {
-      // Document download failure is non-fatal — tender is already saved
-      console.warn(`[fetch-single] Doc download failed:`, (docErr as Error).message);
-    } finally {
-      await closeBrowser();
-    }
 
     // ── Return tender ─────────────────────────────────────────────────────────
     const savedRow = await queryOne<Record<string, unknown>>(
@@ -185,7 +187,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json<ApiResponse<{ tender: Tender; isNew: boolean }>>({
       data: { tender: mapTender(savedRow!), isNew: true },
-      message: `Tender "${rawTender.title}" fetched successfully. L1: ${screening.status}. Review it in the Tenders screen.`,
+      message: `Tender "${rawTender.title}" fetched. AI L1: ${l1Result.status} (${l1Result.confidence} confidence). Review in the Tenders screen.`,
     });
 
   } catch (err) {

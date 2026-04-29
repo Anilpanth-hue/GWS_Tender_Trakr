@@ -1,5 +1,4 @@
 // This file must only run on the server (Node.js). Never import it in client components.
-import 'server-only';
 
 import * as fs from 'fs';
 import type { TenderL2Analysis } from '@/types';
@@ -59,6 +58,7 @@ Return ONLY valid JSON — no markdown, no explanation outside the JSON:
   "performanceBankGuarantee": "% or amount or Not mentioned",
   "contractDuration": "Duration",
   "consortiumJv": "Allowed / Not Allowed / Not mentioned",
+  "reverseAuction": "Yes / No / Not mentioned",
   "mseExemptions": "Yes / No / Not mentioned",
   "startupExemptions": "Yes / No / Not mentioned",
   "bidEvaluationProcess": "L1 / QCBS / other",
@@ -81,6 +81,8 @@ Return ONLY valid JSON — no markdown, no explanation outside the JSON:
     "email": "Email or Not mentioned",
     "address": "Address or Not mentioned"
   },
+  "bestCaseScenario": "If GWS wins and everything goes right — outcome in 1-2 sentences (revenue, relationship, expansion opportunity)",
+  "worstCaseScenario": "If GWS wins but things go wrong — biggest operational or financial risk in 1-2 sentences",
   "otherNotableTakeaways": ["Any critical clause, exemption, or unusual term worth flagging"],
   "analyzedAt": "${new Date().toISOString()}"
 }
@@ -157,9 +159,13 @@ export async function analyzeTenderL2(
       console.log(`[Analysis] Real PDF detected (${Math.round(fileBuffer.length / 1024)}KB) — sending to Gemini as PDF`);
 
       const pdfBase64 = fileBuffer.toString('base64');
+      // Include overview/metadata alongside the PDF so EMD, eligibility etc. are explicit
+      const pdfContentNote = fallbackText
+        ? `[See attached PDF document]\n\n=== TENDER METADATA (from T247 summary) ===\n${fallbackText}`
+        : '[See attached PDF document]';
       const promptText = ANALYSIS_PROMPT
         .replace('{TITLE}', tenderTitle)
-        .replace('{CONTENT}', '[See attached PDF document]');
+        .replace('{CONTENT}', pdfContentNote);
 
       const { text } = await ai.generate({
         model: MODEL,
@@ -238,6 +244,17 @@ function parseAndValidate(rawText: string): TenderL2Analysis {
   if (typeof parsed.gwsRelevanceScore !== 'number') {
     parsed.gwsRelevanceScore = parseInt(String(parsed.gwsRelevanceScore)) || 5;
   }
+
+  // Normalize array fields — AI occasionally returns a string instead of an array
+  const toArray = (val: unknown): string[] => {
+    if (Array.isArray(val)) return val.filter(Boolean);
+    if (typeof val === 'string' && val.trim()) return [val.trim()];
+    return [];
+  };
+  parsed.keyRisks               = toArray(parsed.keyRisks);
+  parsed.keyTermsAndConditions  = toArray(parsed.keyTermsAndConditions);
+  parsed.relevantBusinessLines  = toArray(parsed.relevantBusinessLines);
+  parsed.otherNotableTakeaways  = toArray(parsed.otherNotableTakeaways);
 
   return parsed;
 }

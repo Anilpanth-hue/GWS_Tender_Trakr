@@ -61,6 +61,8 @@ export interface Tender {
   l1Status: TenderStatus;
   l1QualificationReasons: string[];
   l1ExclusionReason: string | null;
+  l1ScopeOfWork: string | null;
+  l1AnalysisSource: 'documents' | 'metadata_only';
 
   // Level 1 human decision
   l1Decision: ScreeningDecision;
@@ -71,6 +73,10 @@ export interface Tender {
   // Level 2 analysis
   l2Analyzed: boolean;
   l2Analysis: TenderL2Analysis | null;
+
+  // Ownership assignment
+  ownerEmail: string | null;
+  ownerAssignedAt: string | null;
 
   createdAt: string;
   updatedAt: string;
@@ -89,6 +95,7 @@ export interface TenderL2Analysis {
   performanceBankGuarantee: string;
   contractDuration: string;
   consortiumJv: string;
+  reverseAuction: string;
   mseExemptions: string;
   startupExemptions: string;
   bidEvaluationProcess: string;
@@ -109,6 +116,8 @@ export interface TenderL2Analysis {
   competitiveInsights: string;         // market context, typical competitors
   estimatedRevenuePotential: string;   // rough revenue / margin estimate if GWS wins
 
+  bestCaseScenario: string;
+  worstCaseScenario: string;
   otherNotableTakeaways: string[];
   contactDetails?: {
     contactPerson: string;
@@ -122,10 +131,10 @@ export interface TenderL2Analysis {
 export interface TenderDocument {
   id: number;
   tenderId: number;
-  fileName: string;
-  filePath: string | null;
+  fileName: string;        // human-readable label, e.g. "MIT", "BOQ Document 1"
+  filePath: string | null; // local disk path for downloaded PDFs
   downloadUrl: string | null;
-  docType: 'summary_pdf' | 'full_docs_zip' | 'other';
+  docType: string;         // 'summary_pdf' | 'full_docs_zip' | 'individual_doc' | 'other'
   fileSize: number | null;
   createdAt: string;
 }

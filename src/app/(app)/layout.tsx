@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard,
@@ -11,8 +11,11 @@ import {
   RefreshCw,
   TrendingUp,
   ChevronRight,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { NavigationProgress } from "@/components/NavigationProgress";
+import { useSession } from "next-auth/react";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -24,9 +27,31 @@ const NAV = [
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router   = useRouter();
+  const { data: session, status } = useSession();
+
+  // Redirect unauthenticated users (safety net — middleware should already handle this)
+  if (status === 'unauthenticated') {
+    router.replace('/login');
+    return null;
+  }
+
+  // Show spinner while session is loading
+  if (status === 'loading') {
+    return (
+      <div className="flex items-center justify-center min-h-screen" style={{ background: '#f8fafc' }}>
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin"
+            style={{ borderColor: 'rgba(124,58,237,0.25)', borderTopColor: '#7c3aed' }} />
+          <p className="text-sm" style={{ color: '#94a3b8' }}>Loading…</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full" style={{ background: "#f8fafc" }}>
+      <NavigationProgress />
       {/* ══════════════ SIDEBAR ══════════════ */}
       <aside
         className="w-[216px] flex-shrink-0 flex flex-col relative overflow-hidden"
@@ -192,21 +217,40 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             border: "1px solid #e2e8f0",
           }}
         >
-          <div className="flex items-center gap-2 mb-0.5">
-            <span
-              className="w-1.5 h-1.5 rounded-full pulse-dot flex-shrink-0"
-              style={{ background: "#22c55e" }}
-            />
-            <p
-              className="text-[11px] font-semibold"
-              style={{ color: "#64748b" }}
-            >
-              All systems online
-            </p>
-          </div>
-          <p className="text-[10px]" style={{ color: "#94a3b8" }}>
-            v1.0 · GWS Intelligence
-          </p>
+          {session?.user ? (
+            <>
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[10px] font-bold text-white"
+                  style={{ background: 'linear-gradient(135deg, #7c3aed, #22d3ee)' }}>
+                  {session.user.name?.[0]?.toUpperCase() || session.user.email?.[0]?.toUpperCase() || '?'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] font-semibold truncate" style={{ color: '#0f172a' }}>
+                    {session.user.name || session.user.email}
+                  </p>
+                  <p className="text-[9.5px] capitalize" style={{ color: '#94a3b8' }}>
+                    {session.user.role}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => router.push('/logout')}
+                className="flex items-center gap-1.5 text-[10.5px] font-medium mt-1.5 transition-opacity hover:opacity-70"
+                style={{ color: '#94a3b8' }}
+              >
+                <LogOut className="w-3 h-3" />
+                Sign out
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="w-1.5 h-1.5 rounded-full pulse-dot flex-shrink-0" style={{ background: "#22c55e" }} />
+                <p className="text-[11px] font-semibold" style={{ color: "#64748b" }}>All systems online</p>
+              </div>
+              <p className="text-[10px]" style={{ color: "#94a3b8" }}>v1.0 · GWS Intelligence</p>
+            </>
+          )}
         </div>
       </aside>
 

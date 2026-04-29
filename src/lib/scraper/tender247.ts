@@ -1,6 +1,6 @@
+import fs from 'fs';
+import path from 'path';
 import puppeteer, { Browser, Page } from 'puppeteer';
-import * as fs from 'fs';
-import * as path from 'path';
 import type { RawTender, ScrapeSession } from '@/types';
 
 const BASE_URL = 'https://www.tender247.com';
@@ -333,7 +333,30 @@ async function scrapeTendersWithScroll(
   return allTenders;
 }
 
+export interface ScrapedDocument {
+  label: string;       // e.g. "MIT", "BOQ Document 1", "Tender Document 2"
+  url: string;         // documents.tender247.com URL
+  docType: string;     // 'individual_doc' | 'full_docs_zip' | 'summary_pdf'
+}
+
 export interface TenderDocumentResult {
+  documents: ScrapedDocument[];
+  // Diagnostic info — populated even when documents is empty
+  diag?: {
+    phaseA_jsonBodiesScanned: number;
+    phaseA_apiDocsFound: number;
+    phaseB_embeddedDocsFound: number;
+    phaseC_spansBefore: number;
+    phaseC_spansAfter: number;
+    phaseC_newSpans: string[];
+    phaseC_allClickableSpans: string[];
+    phaseD_docSpansFound: string[];
+    phaseD_clickCaptured: string[];
+    phaseE_windowOpenUrls: string[];
+    phaseE_relevantResponses: string[];
+    nextDataKeys: string[];
+  };
+  // Legacy fields kept for callers that still reference them
   pdfFileName: string | null;
   pdfFilePath: string | null;
   pdfPublicPath: string | null;
@@ -341,15 +364,35 @@ export interface TenderDocumentResult {
   fullDocsUrl: string | null;
 }
 
+/** Poll `dir` until a new non-temporary file appears, or timeout. Returns all new filenames. */
+async function waitForNewFile(dir: string, knownFiles: Set<string>, timeoutMs: number): Promise<string[]> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 1000));
+    const current = fs.readdirSync(dir);
+    const newFiles = current.filter(
+      f => !knownFiles.has(f) && !f.endsWith('.crdownload') && !f.endsWith('.tmp') && !f.startsWith('.')
+    );
+    if (newFiles.length > 0) return newFiles;
+  }
+  return [];
+}
+
 /**
- * Within an already-logged-in browser session, visit a tender's detail page
- * and download the AI Summary PDF + capture the full-documents ZIP URL.
+ * Download all documents from a tender's detail page using CDP download
+ * interception. Puppeteer is already logged into T247 so session cookies are
+ * present — navigating to a download URL from within the browser works
+ * without any separate credential handling.
  *
- * Four strategies run in order — whichever fires first wins for the PDF:
- *   A. CDP download behavior   — browser saves download to disk automatically
- *   B. Response interception   — captures application/pdf response body directly
- *   C. Request interception    — captures outgoing request, replays with Node fetch
- *   D. DOM link scan           — finds <a href="...documents.tender247..."> without clicking
+ * Strategy (in order of preference):
+ *  1. Find direct <a href> links pointing to document files and fetch each
+ *     via a new authenticated page with CDP download behavior set.
+ *  2. Click "Download All Documents" button and wait for a ZIP to land on disk.
+ *  3. Click individual "Download" buttons one by one and collect each file.
+ *
+ * Files are saved to public/documents/{tenderId}/ and ScrapedDocument.url is
+ * set to the local public path (/documents/{tenderId}/filename) so the route
+ * can serve them directly without a separate download step.
  */
 export async function fetchTenderDocuments(
   browser: Browser,
@@ -357,245 +400,179 @@ export async function fetchTenderDocuments(
   detailUrl: string
 ): Promise<TenderDocumentResult> {
   const downloadDir = path.resolve(process.cwd(), 'public', 'documents', String(tenderId));
-  fs.mkdirSync(downloadDir, { recursive: true });
+  if (!fs.existsSync(downloadDir)) {
+    fs.mkdirSync(downloadDir, { recursive: true });
+  }
 
-  const PDF_NAME = `Tender-Summary-${tenderId}.pdf`;
   const page = await browser.newPage();
-  let pdfFileName: string | null = null;
-  let fullDocsUrl: string | null = null;
-
-  // Mutable state set by async event handlers
-  // (use object wrapper so TypeScript narrowing works correctly)
-  const state = {
-    pdfBuffer: null as Buffer | null,
-    pdfReq: null as { url: string; method: string; headers: Record<string, string>; postData: string | undefined } | null,
-    cdpDownloadDone: false,
-    cdpFilename: '',
-  };
 
   try {
     await page.setViewport({ width: 1366, height: 768 });
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    // ── Strategy A: CDP auto-download (most reliable for file downloads) ──────
-    // Puppeteer 24.x: Browser.setDownloadBehavior saves triggered downloads to disk.
-    let cdpSession: Awaited<ReturnType<typeof page.createCDPSession>> | null = null;
-    try {
-      cdpSession = await page.createCDPSession();
-      await cdpSession.send('Browser.setDownloadBehavior', {
-        behavior: 'allow',
-        downloadPath: path.resolve(downloadDir),
-        eventsEnabled: true,
-      });
-      cdpSession.on('Browser.downloadWillBegin', (evt: { suggestedFilename?: string }) => {
-        state.cdpFilename = evt.suggestedFilename || '';
-        console.log(`[Scraper] CDP download starting: "${state.cdpFilename}" for #${tenderId}`);
-      });
-      cdpSession.on('Browser.downloadProgress', (evt: { state: string }) => {
-        if (evt.state === 'completed') {
-          state.cdpDownloadDone = true;
-          console.log(`[Scraper] ✓ CDP download completed: "${state.cdpFilename}" for #${tenderId}`);
-        } else if (evt.state === 'canceled') {
-          console.warn(`[Scraper] CDP download canceled for #${tenderId}`);
-        }
-      });
-      console.log(`[Scraper] CDP download behavior set for #${tenderId} → ${downloadDir}`);
-    } catch (cdpErr) {
-      console.warn(`[Scraper] CDP setup failed (non-fatal):`, (cdpErr as Error).message);
-    }
-
-    // ── Strategy B: Response interception (PDF content-type) ─────────────────
-    page.on('response', async response => {
-      if (state.pdfBuffer) return;
-      const ct = response.headers()['content-type'] || '';
-      const url = response.url();
-      const isPdf = ct.includes('application/pdf')
-        || ct.includes('application/octet-stream')
-        || (url.toLowerCase().includes('.pdf') && response.status() === 200);
-      if (isPdf) {
-        try {
-          const buf = await response.buffer();
-          if (buf.length > 3000) {
-            state.pdfBuffer = buf;
-            console.log(`[Scraper] ✓ PDF response captured (${Math.round(buf.length / 1024)}KB) for #${tenderId}`);
-          }
-        } catch { /* browser may have consumed response already */ }
-      }
+    // Enable CDP download interception on this page
+    const client = await page.createCDPSession();
+    await client.send('Page.setDownloadBehavior', {
+      behavior: 'allow',
+      downloadPath: downloadDir,
     });
 
-    // ── Strategy C: Request interception — capture outgoing PDF API call ──────
-    await page.setRequestInterception(true);
-    page.on('request', req => {
-      const url = req.url();
-      const method = req.method();
+    // Also set download behavior on any new tabs T247 might open
+    const onNewTarget = async (target: import('puppeteer').Target) => {
+      if (target.type() !== 'page') return;
+      try {
+        const tabClient = await target.createCDPSession();
+        await tabClient.send('Page.setDownloadBehavior', {
+          behavior: 'allow',
+          downloadPath: downloadDir,
+        });
+      } catch { /* tab may already be closed */ }
+    };
+    browser.on('targetcreated', onNewTarget);
 
-      // Match any PDF-generation API endpoint
-      const isPdfCall =
-        /pdf[\-_]?download|download[\-_]?pdf|generate[\-_]?pdf|ai[\-_]?summary|tender[\-_]?pdf/i.test(url)
-        || (method === 'POST' && /pdf|summary/i.test(url));
-      if (isPdfCall && !state.pdfReq) {
-        state.pdfReq = { url, method, headers: { ...req.headers() }, postData: req.postData() ?? undefined };
-        console.log(`[Scraper] ✓ PDF ${method} request captured: ${url.substring(0, 100)} for #${tenderId}`);
-      }
-
-      // Capture full-docs ZIP URL (any request to documents.tender247.com)
-      if (/documents\.tender247\.com/i.test(url) || /download-document-all|all-documents/i.test(url)) {
-        if (!fullDocsUrl) {
-          fullDocsUrl = url;
-          console.log(`[Scraper] ✓ Full-docs URL captured for #${tenderId}: ${url.substring(0, 100)}`);
-        }
-      }
-
-      req.continue();
-    });
-
-    // ── Navigate to detail page ───────────────────────────────────────────────
-    console.log(`[Scraper] Loading detail page for #${tenderId}: ${detailUrl}`);
+    console.log(`[Scraper] #${tenderId} navigating to: ${detailUrl}`);
     await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 45000 });
     await new Promise(r => setTimeout(r, 3000));
 
-    // ── Diagnostics: log what's on the page ──────────────────────────────────
-    const pageInfo = await page.evaluate(() => {
-      const allBtns = Array.from(document.querySelectorAll('button, a'))
-        .map(el => (el.textContent || '').trim().replace(/\s+/g, ' '))
-        .filter(t => t.length > 1 && t.length < 80)
-        .slice(0, 30);
-      const allLinks = Array.from(document.querySelectorAll('a[href]'))
-        .map(el => (el as HTMLAnchorElement).href)
-        .filter(h => h.length > 10)
-        .slice(0, 20);
-      return { buttons: allBtns, links: allLinks };
-    });
-    console.log(`[Scraper] #${tenderId} buttons: ${pageInfo.buttons.join(' | ')}`);
+    // Scroll to trigger lazy-loaded Tender Documents section
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await new Promise(r => setTimeout(r, 2000));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await new Promise(r => setTimeout(r, 1000));
 
-    // ── Strategy D: DOM link scan (no click needed) ───────────────────────────
-    for (const href of pageInfo.links) {
-      if (/documents\.tender247\.com/i.test(href) && !fullDocsUrl) {
-        fullDocsUrl = href;
-        console.log(`[Scraper] ✓ Full-docs URL from DOM: ${href.substring(0, 100)}`);
-      }
-    }
+    await page.waitForFunction(
+      () => /tender\s*documents?/i.test(document.body.innerText),
+      { timeout: 12000 }
+    ).catch(() => console.warn(`[Scraper] #${tenderId} "Tender Documents" section not visible`));
 
-    // ── Record files already in downloadDir before clicking ───────────────────
-    const preClickFiles = new Set(fs.existsSync(downloadDir) ? fs.readdirSync(downloadDir) : []);
+    const filesBefore = new Set(fs.readdirSync(downloadDir));
+    const found: ScrapedDocument[] = [];
 
-    // ── Click PDF download button ─────────────────────────────────────────────
-    const PDF_RE = /pdf\s*download|download\s*pdf|ai\s*summary|tender\s*summary|summary\s*(pdf|report)|ai\s*(pdf|report)/i;
+    // ── Strategy 1: direct <a href> document links ────────────────────────────
+    const directLinks = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLAnchorElement>('a'))
+        .filter(a => {
+          const attr = a.getAttribute('href') || '';
+          if (!attr || attr === '#' || /^javascript:/i.test(attr)) return false;
+          return a.href.startsWith('http') &&
+                 /documents?\.tender247|download|s3\.|\.pdf|\.zip|\.doc/i.test(a.href) &&
+                 !/tender247\.com\/(tenders|dashboard|auth\/home|settings)/i.test(a.href);
+        })
+        .map(a => ({
+          text: (a.textContent || '').trim() || a.title || 'Document',
+          href: a.href,
+        }))
+    );
 
-    const pdfBtnText = await page.evaluate((reSource: string) => {
-      const re = new RegExp(reSource, 'i');
-      // Search all clickable elements broadly
-      const candidates = Array.from(document.querySelectorAll(
-        'button, a, [role="button"], span[class*="cursor"], div[class*="cursor"]'
-      ));
-      const el = candidates.find(e => re.test((e.textContent || '').trim()));
-      if (el) {
-        (el as HTMLElement).click();
-        return (el.textContent || '').trim().substring(0, 60);
-      }
-      return '';
-    }, PDF_RE.source);
+    console.log(`[Scraper] #${tenderId} Direct <a href> links: ${directLinks.length}`);
 
-    if (pdfBtnText) {
-      console.log(`[Scraper] Clicked PDF button: "${pdfBtnText}" for #${tenderId}`);
-
-      // Wait up to 20s for PDF via any of the three strategies
-      const deadline = Date.now() + 20000;
-      while (Date.now() < deadline) {
-        if (state.pdfBuffer || state.pdfReq || state.cdpDownloadDone) break;
-        // Also poll disk for new file (CDP strategy)
-        const nowFiles = fs.existsSync(downloadDir) ? fs.readdirSync(downloadDir) : [];
-        const newFile = nowFiles.find(f => !preClickFiles.has(f) && !f.endsWith('.crdownload'));
-        if (newFile) { state.cdpFilename = newFile; state.cdpDownloadDone = true; break; }
-        await new Promise(r => setTimeout(r, 300));
-      }
-    } else {
-      console.warn(`[Scraper] ✗ No PDF button matched "${PDF_RE}" for #${tenderId}`);
-      console.warn(`[Scraper]   Available buttons: ${pageInfo.buttons.slice(0, 10).join(', ')}`);
-    }
-
-    // ── Save PDF — whichever strategy fired ───────────────────────────────────
-
-    if (state.pdfBuffer) {
-      // Strategy B: direct response buffer
-      fs.writeFileSync(path.join(downloadDir, PDF_NAME), state.pdfBuffer);
-      pdfFileName = PDF_NAME;
-      console.log(`[Scraper] ✓ PDF saved (response) for #${tenderId}: ${Math.round(state.pdfBuffer.length / 1024)}KB`);
-
-    } else if (state.cdpDownloadDone && state.cdpFilename) {
-      // Strategy A: CDP auto-download — file already on disk
-      const src = path.join(downloadDir, state.cdpFilename);
-      const dst = path.join(downloadDir, PDF_NAME);
-      if (fs.existsSync(src)) {
-        if (src !== dst) fs.renameSync(src, dst);
-        pdfFileName = PDF_NAME;
-        const sz = fs.statSync(dst).size;
-        console.log(`[Scraper] ✓ PDF saved (CDP) for #${tenderId}: ${state.cdpFilename} → ${PDF_NAME} (${Math.round(sz / 1024)}KB)`);
-      }
-
-    } else if (state.pdfReq) {
-      // Strategy C: replicate outgoing request with Node.js fetch
-      const req = state.pdfReq;
-      const SKIP = new Set(['host', 'content-length', 'transfer-encoding', 'connection']);
-      const headers: Record<string, string> = {};
-      for (const [k, v] of Object.entries(req.headers)) {
-        if (!SKIP.has(k.toLowerCase())) headers[k] = String(v);
-      }
+    for (const link of directLinks) {
+      const snap = new Set(fs.readdirSync(downloadDir));
+      const dlPage = await browser.newPage();
       try {
-        const res = await fetch(req.url, { method: req.method, headers, body: req.postData });
-        console.log(`[Scraper] Request replay → HTTP ${res.status} for #${tenderId}`);
-        if (res.status === 200 || res.status === 201) {
-          const buf = Buffer.from(await res.arrayBuffer());
-          if (buf.length > 2000) {
-            fs.writeFileSync(path.join(downloadDir, PDF_NAME), buf);
-            pdfFileName = PDF_NAME;
-            console.log(`[Scraper] ✓ PDF saved (replay) for #${tenderId}: ${Math.round(buf.length / 1024)}KB`);
-          } else {
-            console.warn(`[Scraper] Replay PDF too small (${buf.length}B) — likely an error response`);
-          }
-        } else {
-          const errText = await res.text().catch(() => '');
-          console.warn(`[Scraper] Replay → HTTP ${res.status}: ${errText.substring(0, 150)}`);
+        const dlClient = await dlPage.createCDPSession();
+        await dlClient.send('Page.setDownloadBehavior', {
+          behavior: 'allow',
+          downloadPath: downloadDir,
+        });
+        console.log(`[Scraper] #${tenderId} Fetching: ${link.href.substring(0, 100)}`);
+        await dlPage.goto(link.href, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        const newFiles = await waitForNewFile(downloadDir, snap, 20000);
+        for (const f of newFiles) {
+          const publicPath = `/documents/${tenderId}/${f}`;
+          found.push({ label: link.text || f.replace(/\.[^.]+$/, ''), url: publicPath, docType: f.endsWith('.zip') ? 'full_docs_zip' : 'individual_doc' });
+          console.log(`[Scraper] #${tenderId} ✓ "${link.text}" → ${publicPath}`);
         }
-      } catch (e) {
-        console.warn(`[Scraper] Replay fetch failed:`, (e as Error).message);
-      }
-
-    } else {
-      console.warn(`[Scraper] ✗ No PDF obtained for #${tenderId} — button may need subscription or page structure changed`);
-    }
-
-    // ── Click "Download All Documents" if ZIP URL still missing ───────────────
-    if (!fullDocsUrl) {
-      const DOCS_RE = /download\s*all\s*documents?|all\s*tender\s*documents?|download\s*documents/i;
-      const docsClicked = await page.evaluate((reSource: string) => {
-        const re = new RegExp(reSource, 'i');
-        const el = Array.from(document.querySelectorAll('button, a, span'))
-          .find(e => re.test(e.textContent || ''));
-        if (el) { (el as HTMLElement).click(); return (el.textContent || '').trim(); }
-        return '';
-      }, DOCS_RE.source);
-      if (docsClicked) {
-        console.log(`[Scraper] Clicked full-docs button: "${docsClicked}" for #${tenderId}`);
-        await new Promise(r => setTimeout(r, 5000)); // wait for redirect/request
+      } finally {
+        await dlPage.close().catch(() => {});
       }
     }
 
-    const pdfFilePath = pdfFileName ? path.join(downloadDir, pdfFileName) : null;
-    const pdfPublicPath = pdfFileName ? `/documents/${tenderId}/${pdfFileName}` : null;
-    const pdfFileSize = pdfFilePath && fs.existsSync(pdfFilePath)
-      ? fs.statSync(pdfFilePath).size : null;
+    // ── Strategy 2: "Download All Documents" button ───────────────────────────
+    if (found.length === 0) {
+      const snapAll = new Set(fs.readdirSync(downloadDir));
+      const clickedAll = await page.evaluate(() => {
+        const all = Array.from(document.querySelectorAll<HTMLElement>('*'));
+        const leaf = all.find(e => e.children.length === 0 && /download\s*all\s*documents?/i.test((e.textContent || '').trim()));
+        if (!leaf) return false;
+        (leaf.closest('a') || leaf.closest('button') || leaf as HTMLElement).click();
+        return true;
+      });
+      console.log(`[Scraper] #${tenderId} "Download All Documents" click: ${clickedAll}`);
 
-    console.log(`[Scraper] #${tenderId} DONE → PDF: ${pdfFileName || '✗ none'} | ZIP: ${fullDocsUrl ? '✓' : '✗ none'}`);
-    return { pdfFileName, pdfFilePath, pdfPublicPath, pdfFileSize, fullDocsUrl };
+      if (clickedAll) {
+        const newFiles = await waitForNewFile(downloadDir, snapAll, 30000);
+        for (const f of newFiles) {
+          const publicPath = `/documents/${tenderId}/${f}`;
+          found.push({ label: f.endsWith('.zip') ? 'All Tender Documents (ZIP)' : f.replace(/\.[^.]+$/, ''), url: publicPath, docType: f.endsWith('.zip') ? 'full_docs_zip' : 'individual_doc' });
+          console.log(`[Scraper] #${tenderId} ✓ ZIP/All → ${publicPath}`);
+        }
+      }
+    }
+
+    // ── Strategy 3: individual "Download" buttons ─────────────────────────────
+    if (found.length === 0) {
+      const downloadBtnCount = await page.evaluate(() =>
+        Array.from(document.querySelectorAll<HTMLElement>('*'))
+          .filter(e => e.children.length === 0 && /^download$/i.test((e.textContent || '').trim()))
+          .length
+      );
+      console.log(`[Scraper] #${tenderId} Individual "Download" buttons: ${downloadBtnCount}`);
+
+      for (let i = 0; i < downloadBtnCount; i++) {
+        const snapBtn = new Set(fs.readdirSync(downloadDir));
+        const btnLabel = await page.evaluate((idx: number) => {
+          const btns = Array.from(document.querySelectorAll<HTMLElement>('*'))
+            .filter(e => e.children.length === 0 && /^download$/i.test((e.textContent || '').trim()));
+          const btn = btns[idx];
+          if (!btn) return '';
+          const parent = btn.closest('div');
+          const labelEl = parent?.querySelector('span, p');
+          const label = (labelEl?.textContent || '').trim();
+          (btn.closest('a') || btn.closest('button') || btn).click();
+          return label || `Document ${idx + 1}`;
+        }, i);
+
+        if (!btnLabel) continue;
+        console.log(`[Scraper] #${tenderId} Clicking "Download" for "${btnLabel}"`);
+
+        const newFiles = await waitForNewFile(downloadDir, snapBtn, 20000);
+        for (const f of newFiles) {
+          const publicPath = `/documents/${tenderId}/${f}`;
+          found.push({ label: btnLabel || f.replace(/\.[^.]+$/, ''), url: publicPath, docType: f.endsWith('.zip') ? 'full_docs_zip' : 'individual_doc' });
+          console.log(`[Scraper] #${tenderId} ✓ "${btnLabel}" → ${publicPath}`);
+        }
+      }
+    }
+
+    browser.off('targetcreated', onNewTarget);
+
+    // Pick up any files already downloaded that we may have missed above
+    const existingUrls = new Set(found.map(d => d.url));
+    for (const f of fs.readdirSync(downloadDir)) {
+      if (f.endsWith('.crdownload') || f.endsWith('.tmp') || f.startsWith('.')) continue;
+      const publicPath = `/documents/${tenderId}/${f}`;
+      if (!existingUrls.has(publicPath) && !filesBefore.has(f)) {
+        found.push({ label: f.replace(/\.[^.]+$/, ''), url: publicPath, docType: f.endsWith('.zip') ? 'full_docs_zip' : 'individual_doc' });
+      }
+    }
+
+    console.log(`[Scraper] #${tenderId} FINAL ${found.length} doc(s) downloaded`);
+
+    return {
+      documents: found,
+      pdfFileName: null, pdfFilePath: null, pdfPublicPath: null, pdfFileSize: null,
+      fullDocsUrl: found.find(d => d.docType === 'full_docs_zip')?.url ?? null,
+    };
 
   } catch (err) {
     console.error(`[Scraper] fetchTenderDocuments error for #${tenderId}:`, (err as Error).message);
-    return { pdfFileName: null, pdfFilePath: null, pdfPublicPath: null, pdfFileSize: null, fullDocsUrl: null };
+    return { documents: [], pdfFileName: null, pdfFilePath: null, pdfPublicPath: null, pdfFileSize: null, fullDocsUrl: null };
   } finally {
-    await page.close();
+    await page.close().catch(() => {});
   }
 }
 
@@ -616,6 +593,7 @@ export interface SingleTenderResult {
     msmeExemption: string;
     startupExemption: string;
     jvConsortium: string;
+    reverseAuction: string;
     performanceBankGuarantee: string;
     hardCopySubmission: string;
     eligibilityCriteria: string;
@@ -688,17 +666,21 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
         const textLower = text.toLowerCase();
         if (textLower !== labelLower &&
             !textLower.startsWith(labelLower + ':') &&
+            !textLower.startsWith(labelLower + ' :') &&
             !textLower.startsWith(labelLower + ' ')) continue;
-        if (text.length > labelLower.length + 5) continue; // too long, probably a paragraph
+        if (text.length > labelLower.length + 30) continue; // too long, probably a paragraph
 
         // Next sibling in same parent (grid cell)
+        // T247 uses a 3-cell grid: [label] [":"] [value] — skip pure separator cells
         const parent = el.parentElement;
         if (!parent) continue;
         const siblings = Array.from(parent.children);
         const idx = siblings.indexOf(el);
         for (let offset = 1; offset <= 2 && idx + offset < siblings.length; offset++) {
           const candidate = siblings[idx + offset] as HTMLElement;
-          const val = (candidate.textContent || '').trim().replace(/\s+/g, ' ');
+          let val = (candidate.textContent || '').trim().replace(/\s+/g, ' ');
+          if (val === ':') continue; // skip T247 separator cell
+          if (val.startsWith(':')) val = val.slice(1).trim();
           if (val && val.length > 0 && val.length < 600 && !isJunk(val)) return val;
         }
 
@@ -733,13 +715,15 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
           for (const el of Array.from(summaryRoot.querySelectorAll('div, span, td'))) {
             if (el.children.length > 1) continue;
             const text = (el.textContent || '').trim().toLowerCase();
-            if (text === labelLower || text.startsWith(labelLower + ':')) {
+            if (text === labelLower || text.startsWith(labelLower + ':') || text.startsWith(labelLower + ' :')) {
               const parent = el.parentElement;
               if (parent) {
                 const siblings = Array.from(parent.children);
                 const idx = siblings.indexOf(el);
                 for (let off = 1; off <= 2 && idx + off < siblings.length; off++) {
-                  const val = ((siblings[idx + off] as HTMLElement).textContent || '').trim().replace(/\s+/g, ' ');
+                  let val = ((siblings[idx + off] as HTMLElement).textContent || '').trim().replace(/\s+/g, ' ');
+                  if (val === ':') continue; // skip T247 separator cell
+                  if (val.startsWith(':')) val = val.slice(1).trim();
                   if (val && !isJunk(val) && val.length < 600) return val;
                 }
               }
@@ -819,36 +803,51 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
     }
 
     // ── Location ─────────────────────────────────────────────────────────────
-    const location = smartLookup('Site Location', 'State', 'Location', 'District');
+    const location = smartLookup('Site location', 'Site Location', 'State', 'Location', 'District');
 
     // ── Overview fields ───────────────────────────────────────────────────────
     const orgTenderId      = smartLookup('Tender ID', 'Organisation Tender ID', 'Tender Reference', 'Ref No');
-    const emdValue         = smartLookup('EMD', 'Earnest Money Deposit', 'Earnest Money');
-    const documentFees     = smartLookup('Document Fee', 'Document Fees', 'Tender Fee');
-    const completionPeriod = smartLookup('Completion Period', 'Contract Period', 'Duration', 'Period');
+    const emdValue         = smartLookup('Emd Amount', 'EMD Value', 'EMD Amount', 'EMD', 'Earnest Money Deposit', 'Earnest Money');
+    const documentFees     = smartLookup('Document Fee', 'Document Fees', 'Tender Fee', 'Tender Document Fee');
+    const completionPeriod = smartLookup('Contract Period', 'Completion Period', 'Work Completion Period', 'Duration', 'Time Limit', 'Period of Contract', 'Period');
     const contactPerson    = smartLookup('Contact Person', 'Officer', 'Contact');
     const contactAddress   = smartLookup('Contact Address', 'Address');
     const quantity         = smartLookup('Quantity');
     const msmeExemption    = smartLookup('MSME Exemption', 'MSE Exemption', 'MSME');
     const startupExemption = smartLookup('Startup Exemption', 'Startup');
-    const jvConsortium     = smartLookup('JV / Consortium', 'Consortium', 'Joint Venture', 'JV');
-    const pbg              = smartLookup('Performance Bank Guarantee', 'PBG');
+    const jvConsortium     = smartLookup('Joint Venture OR Consortium OR JV', 'JV / Consortium', 'Consortium', 'Joint Venture', 'JV Allowed', 'JV');
+    const pbg              = smartLookup('Performance Bank Guarantee', 'Performance Security', 'PBG');
     const hardCopy         = smartLookup('Hard Copy', 'Hard Copy Submission');
     const eligibility      = smartLookup('Eligibility Criteria', 'Eligibility');
     const pqcSummary       = smartLookup('Pre Qualification', 'PQC', 'Pre-Qualification');
+    const reverseAuction   = smartLookup('Bid to Ra Enabled', 'Reverse Auction', 'e-Reverse Auction', 'Reverse Bidding');
 
     // ── Full AI summary text ──────────────────────────────────────────────────
     const fullSummaryText = summaryRoot
       ? (summaryRoot.textContent || '').trim().replace(/\s+/g, ' ').substring(0, 2000)
       : '';
 
+    // ── Fallback: scan full page text for EMD and contract period ─────────────
+    // Some tenders (especially corrigenda) don't have the AI Summary grid,
+    // but EMD / period values are visible as plain text on the page.
+    let emdFallback = emdValue;
+    let periodFallback = completionPeriod;
+    if (!emdFallback) {
+      const emdMatch = document.body.innerText.match(/EMD[^₹\d]*[₹]?\s*([\d,]+(?:\.\d+)?\s*(?:Cr|L|Lakh|Crore)?)/i);
+      if (emdMatch) emdFallback = emdMatch[1].trim();
+    }
+    if (!periodFallback) {
+      const periodMatch = document.body.innerText.match(/(?:completion|contract)\s+period[^:\n]*[:]\s*([^\n]{3,60})/i);
+      if (periodMatch) periodFallback = periodMatch[1].trim();
+    }
+
     return {
       title: title || '',
       bidValueRaw, dueDate, issuedBy, location,
       t247Id: tid,
-      orgTenderId, estimatedCost: bidValueRaw, emdValue, documentFees,
-      completionPeriod, siteLocation: location, contactPerson, contactAddress,
-      quantity, msmeExemption, startupExemption, jvConsortium,
+      orgTenderId, estimatedCost: bidValueRaw, emdValue: emdFallback, documentFees,
+      completionPeriod: periodFallback, siteLocation: location, contactPerson, contactAddress,
+      quantity, msmeExemption, startupExemption, jvConsortium, reverseAuction,
       performanceBankGuarantee: pbg, hardCopySubmission: hardCopy,
       eligibilityCriteria: eligibility, pqcSummary, fullSummaryText,
       fetchedAt: new Date().toISOString(),
@@ -1023,6 +1022,83 @@ export async function scrapeAllTenders(
 
     console.log(`[Scraper] Total unique tenders scraped: ${tenders.length}`);
     return tenders;
+  } finally {
+    await page.close();
+  }
+}
+
+/**
+ * Scrape the T247 AI Summary / detail page using an already-logged-in browser.
+ * Use this during batch scraping (Phase 3) — no re-login needed, opens a new tab.
+ */
+export async function scrapeDetailPageData(
+  browser: Browser,
+  detailUrl: string,
+  t247Id: string
+): Promise<SingleTenderResult['overview']> {
+  const page = await browser.newPage();
+  try {
+    await page.setViewport({ width: 1366, height: 768 });
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+    await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Scroll to trigger lazy-loaded AI Summary section
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await new Promise(r => setTimeout(r, 1000));
+    await page.evaluate(() => window.scrollTo(0, 0));
+
+    const { title: _t, bidValueRaw: _b, dueDate: _d, issuedBy: _i, location: _l, ...overview } =
+      await extractTenderDetailPage(page, t247Id);
+    return overview;
+  } finally {
+    await page.close();
+  }
+}
+
+export interface OverviewRefreshResult {
+  overview: SingleTenderResult['overview'];
+  /** Re-scraped due date in YYYY-MM-DD format (or null if not found) */
+  dueDate: string | null;
+  /** Re-scraped estimated cost raw string */
+  estimatedCostRaw: string;
+}
+
+/**
+ * Scrape overview fields + key dates for a tender already in the DB.
+ * Returns the full overview AND the re-scraped due date so callers can
+ * detect corrigendum / date extensions.
+ */
+export async function scrapeOverviewByDetailUrl(
+  email: string,
+  password: string,
+  detailUrl: string,
+  t247Id: string
+): Promise<OverviewRefreshResult> {
+  const browser = await getBrowser();
+  const page = await browser.newPage();
+  try {
+    await page.setViewport({ width: 1366, height: 768 });
+    // eslint-disable-next-line @typescript-eslint/no-deprecated
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    );
+    const loggedIn = await login(page, email, password);
+    if (!loggedIn) throw new Error('Failed to login to Tender247. Check credentials in Settings.');
+
+    await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+    await new Promise(r => setTimeout(r, 2500));
+
+    const pageData = await extractTenderDetailPage(page, t247Id);
+    const { title: _t, bidValueRaw, dueDate, issuedBy: _i, location: _l, ...overview } = pageData;
+
+    return {
+      overview,
+      dueDate: parseDateFlexible(dueDate),
+      estimatedCostRaw: bidValueRaw,
+    };
   } finally {
     await page.close();
   }

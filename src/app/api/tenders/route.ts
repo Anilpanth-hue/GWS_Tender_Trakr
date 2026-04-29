@@ -91,6 +91,8 @@ export async function GET(req: NextRequest) {
       l1Status: t.l1_status,
       l1QualificationReasons: parseJsonColumn(t.l1_qualification_reasons) ?? [],
       l1ExclusionReason: t.l1_exclusion_reason,
+      l1ScopeOfWork: (t.l1_scope_of_work as string) || null,
+      l1AnalysisSource: (t.l1_analysis_source as 'documents' | 'metadata_only') || 'metadata_only',
       l1Decision: t.l1_decision,
       l1DecisionReason: t.l1_decision_reason,
       l1DecisionBy: t.l1_decision_by,

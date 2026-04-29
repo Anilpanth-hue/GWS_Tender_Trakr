@@ -10,6 +10,7 @@ import {
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
 import type { ScrapeRun } from '@/types';
+import type { DashboardStats } from '@/app/api/dashboard/route';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell,
@@ -198,46 +199,19 @@ function RunsChart({ runs }: { runs: ScrapeRun[] }) {
 }
 
 /* ── Dashboard page ─────────────────────────────────────────────── */
-interface Stats {
-  totalTenders: number; qualifiedTenders: number; rejectedTenders: number;
-  pendingDecision: number; acceptedL1: number; rejectedL1: number;
-  l2Analyzed: number; todayFound: number;
-}
-
 export default function DashboardPage() {
-  const [stats, setStats]           = useState<Stats | null>(null);
-  const [recentRuns, setRecentRuns] = useState<ScrapeRun[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [scraping, setScraping]     = useState(false);
+  const [stats, setStats]     = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [scraping, setScraping] = useState(false);
 
   useEffect(() => { fetchData(); }, []);
 
   async function fetchData() {
     setLoading(true);
     try {
-      const [tRes, rRes] = await Promise.all([
-        fetch('/api/tenders?pageSize=1'),
-        fetch('/api/scrape'),
-      ]);
-      const [tData, rData] = await Promise.all([tRes.json(), rRes.json()]);
-      const [q, r, p, a, rl] = await Promise.all([
-        fetch('/api/tenders?pageSize=1&l1Status=qualified').then(x=>x.json()),
-        fetch('/api/tenders?pageSize=1&l1Status=rejected').then(x=>x.json()),
-        fetch('/api/tenders?pageSize=1&l1Decision=pending&l1Status=qualified').then(x=>x.json()),
-        fetch('/api/tenders?pageSize=1&l1Decision=accepted').then(x=>x.json()),
-        fetch('/api/tenders?pageSize=1&l1Decision=rejected').then(x=>x.json()),
-      ]);
-      setStats({
-        totalTenders:     tData.data?.total   || 0,
-        qualifiedTenders: q.data?.total       || 0,
-        rejectedTenders:  r.data?.total       || 0,
-        pendingDecision:  p.data?.total       || 0,
-        acceptedL1:       a.data?.total       || 0,
-        rejectedL1:       rl.data?.total      || 0,
-        l2Analyzed:       a.data?.total       || 0,
-        todayFound:       rData.data?.[0]?.totalFound || 0,
-      });
-      setRecentRuns((rData.data || []).slice(0, 6));
+      const res = await fetch('/api/dashboard');
+      const { data } = await res.json();
+      setStats(data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
@@ -381,7 +355,7 @@ export default function DashboardPage() {
               </span>
             </div>
           </div>
-          <div className="h-[196px]"><RunsChart runs={recentRuns} /></div>
+          <div className="h-[196px]"><RunsChart runs={stats?.recentRuns || []} /></div>
         </motion.div>
 
         {/* Donut — 2 cols */}
@@ -415,12 +389,12 @@ export default function DashboardPage() {
             </Link>
           </div>
           <div>
-            {!recentRuns.length ? (
+            {!(stats?.recentRuns?.length) ? (
               <div className="px-5 py-10 flex flex-col items-center gap-2">
                 <Activity className="w-5 h-5 opacity-20" style={{ color:'#7c3aed' }} />
                 <p className="text-[12px]" style={{ color:'#94a3b8' }}>No runs yet</p>
               </div>
-            ) : recentRuns.map((run, i) => {
+            ) : stats.recentRuns.slice(0, 6).map((run, i) => {
               const sc = run.status === 'completed' ? '#22c55e' : run.status === 'failed' ? '#ef4444' : '#7c3aed';
               return (
                 <motion.div

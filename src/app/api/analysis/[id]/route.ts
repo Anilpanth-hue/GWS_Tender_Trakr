@@ -29,37 +29,66 @@ export async function POST(
 
     console.log(`[Analysis] L2 for tender #${id}: ${String(tender.title).substring(0, 80)}`);
 
-    // Find the summary PDF downloaded during scraping (no T247 needed)
-    const docRows = await query<{ file_path: string | null; download_url: string | null; doc_type: string }>(
-      `SELECT file_path, download_url, doc_type
+    // Find any downloaded PDF document (individual_doc or summary_pdf)
+    const docRows = await query<{ file_path: string | null; doc_type: string }>(
+      `SELECT file_path, doc_type
        FROM tender_documents
-       WHERE tender_id = ?
-       ORDER BY created_at ASC`,
+       WHERE tender_id = ? AND file_path IS NOT NULL
+       ORDER BY FIELD(doc_type,'summary_pdf','individual_doc','full_docs_zip'), created_at ASC`,
       [id]
     );
 
-    const summaryPdfRow = docRows.find(d => d.doc_type === 'summary_pdf');
     let pdfPath: string | null = null;
-
-    if (summaryPdfRow?.file_path) {
-      // file_path is stored as /documents/{id}/filename.pdf (public-relative)
-      // Resolve to absolute path for fs.readFileSync
-      pdfPath = path.resolve(process.cwd(), 'public', summaryPdfRow.file_path.replace(/^\//, ''));
-      console.log(`[Analysis] Using PDF from disk: ${pdfPath}`);
-    } else {
-      console.log('[Analysis] No PDF found in tender_documents — will use text fallback. Trigger a scrape first to download documents.');
+    for (const row of docRows) {
+      if (!row.file_path) continue;
+      const abs = path.resolve(process.cwd(), 'public', row.file_path.replace(/^\//, ''));
+      if (abs.endsWith('.pdf') && require('fs').existsSync(abs)) {
+        pdfPath = abs;
+        console.log(`[Analysis] Using PDF from disk: ${pdfPath}`);
+        break;
+      }
     }
+    if (!pdfPath) console.log('[Analysis] No PDF on disk — using structured text from tender overview.');
 
-    // Fallback text if no PDF exists yet
+    // Build rich fallback text from stored tender_overview (EMD, eligibility, scope, etc.)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let overviewText = '';
+    try {
+      const ov = typeof tender.tender_overview === 'string'
+        ? JSON.parse(tender.tender_overview as string)
+        : tender.tender_overview as Record<string, string> | null;
+      if (ov) {
+        const lines: string[] = [];
+        if (ov.estimatedCost)      lines.push(`Estimated Cost: ${ov.estimatedCost}`);
+        if (ov.emdValue)           lines.push(`EMD: ${ov.emdValue}`);
+        if (ov.documentFees)       lines.push(`Document Fees: ${ov.documentFees}`);
+        if (ov.completionPeriod)   lines.push(`Completion Period: ${ov.completionPeriod}`);
+        if (ov.siteLocation)       lines.push(`Site Location: ${ov.siteLocation}`);
+        if (ov.msmeExemption)      lines.push(`MSME Exemption: ${ov.msmeExemption}`);
+        if (ov.startupExemption)   lines.push(`Startup Exemption: ${ov.startupExemption}`);
+        if (ov.jvConsortium)       lines.push(`JV / Consortium: ${ov.jvConsortium}`);
+        if (ov.reverseAuction)     lines.push(`Reverse Auction: ${ov.reverseAuction}`);
+        if (ov.hardCopySubmission) lines.push(`Hard Copy Submission: ${ov.hardCopySubmission}`);
+        if (ov.performanceBankGuarantee) lines.push(`Performance Bank Guarantee: ${ov.performanceBankGuarantee}`);
+        if (ov.contactPerson)      lines.push(`Contact Person: ${ov.contactPerson}`);
+        if (ov.contactAddress)     lines.push(`Contact Address: ${ov.contactAddress}`);
+        if (ov.eligibilityCriteria) lines.push(`\nEligibility / PQC Criteria:\n${ov.eligibilityCriteria}`);
+        if (ov.pqcSummary && ov.pqcSummary !== ov.eligibilityCriteria) lines.push(`Pre-Qualification Summary:\n${ov.pqcSummary}`);
+        if (ov.fullSummaryText)    lines.push(`\nScope / AI Summary:\n${ov.fullSummaryText}`);
+        overviewText = lines.join('\n');
+      }
+    } catch { /* ignore parse errors */ }
+
     const fallbackText = [
       `Title: ${tender.title}`,
       `Issued by: ${tender.issued_by}`,
       `Location: ${tender.location}`,
       `Estimated Value: ${tender.estimated_value_raw}`,
       `Due Date: ${tender.due_date}`,
-    ].join('\n');
+      overviewText,
+    ].filter(Boolean).join('\n');
 
-    // Run Gemini AI analysis — no T247, no Puppeteer
+    // Run Gemini AI analysis
     console.log('[Analysis] Running Gemini AI analysis...');
     const analysis = await analyzeTenderL2(
       tender.title as string,
