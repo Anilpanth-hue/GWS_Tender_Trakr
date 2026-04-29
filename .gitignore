@@ -24,6 +24,11 @@ tsconfig.tsbuildinfo
 # ─── Debug / dev artifacts ────────────────────────────────────────────────────
 debug-screenshots/
 debug-docfetch/
+public/debug-screenshot.png
+
+# ─── Downloaded tender documents (local runtime files, not source code) ───────
+public/documents/
+test-doc.zip
 
 # ─── Puppeteer / Chromium cache ───────────────────────────────────────────────
 .local-chromium/
