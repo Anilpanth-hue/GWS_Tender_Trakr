@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, Clock, X, Building2, MapPin,
   Calendar, DollarSign, FileText, Microscope, AlertCircle,
   ArrowRight, ChevronDown, ChevronUp, Zap, Loader2, Hash,
-  SlidersHorizontal, Banknote,
+  SlidersHorizontal, Banknote, RefreshCw,
 } from 'lucide-react';
 import { formatCurrency, formatDate, getDaysUntilDue, cn } from '@/lib/utils';
 import type { Tender, PaginatedResponse } from '@/types';
@@ -83,13 +83,45 @@ function TenderSummaryText({ text }: { text: string }) {
 
 /* ── Preview Panel ─────────────────────────────────────────── */
 function PreviewPanel({
-  tender, onClose, onAccept, onReject, updating,
+  tender, onClose, onAccept, onReject, updating, onOverviewFetched,
 }: {
   tender: Tender; onClose: () => void;
   onAccept: () => void; onReject: () => void; updating: boolean;
+  onOverviewFetched: (tenderId: number) => void;
 }) {
   const { color: dateColor } = dueDateStyle(tender.dueDate);
   const days = getDaysUntilDue(tender.dueDate);
+  const [fetchingOverview, setFetchingOverview] = useState(false);
+  const [overviewMsg, setOverviewMsg] = useState<string | null>(null);
+
+  // Auto-fetch when: metadata_only AND (no overview at all OR no EMD)
+  // Works even without detailUrl — fetch-overview constructs URL from tender_no
+  const needsDetailFetch = tender.l1AnalysisSource === 'metadata_only' &&
+    (!tender.tenderOverview || !tender.tenderOverview.emdValue);
+
+  // Auto-fetch overview once when panel opens for metadata_only tenders
+  useEffect(() => {
+    if (!needsDetailFetch) return;
+    fetchOverview();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tender.id]);
+
+  async function fetchOverview() {
+    if (fetchingOverview) return;
+    setFetchingOverview(true);
+    setOverviewMsg(null);
+    try {
+      const res = await fetch(`/api/tenders/${tender.id}/fetch-overview`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Fetch failed');
+      setOverviewMsg('Details fetched.');
+      onOverviewFetched(tender.id);
+    } catch (err) {
+      setOverviewMsg(`Could not fetch: ${(err as Error).message}`);
+    } finally {
+      setFetchingOverview(false);
+    }
+  }
 
   const overview = tender.tenderOverview;
 
@@ -167,6 +199,26 @@ function PreviewPanel({
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
+          {/* Fetching overview status */}
+          {(fetchingOverview || overviewMsg) && (
+            <div className="rounded-xl px-4 py-3 flex items-center gap-2.5 text-[12.5px]"
+              style={{
+                background: fetchingOverview ? 'rgba(124,58,237,0.04)' : overviewMsg?.includes('Could not') ? 'rgba(239,68,68,0.04)' : 'rgba(22,163,74,0.04)',
+                border: `1px solid ${fetchingOverview ? 'rgba(124,58,237,0.15)' : overviewMsg?.includes('Could not') ? 'rgba(239,68,68,0.15)' : 'rgba(22,163,74,0.15)'}`,
+              }}
+            >
+              {fetchingOverview
+                ? <><Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" style={{ color: '#7c3aed' }} /><span style={{ color: '#7c3aed' }}>Fetching EMD &amp; contract details from T247… (~30s)</span></>
+                : <><span style={{ color: overviewMsg?.includes('Could not') ? '#dc2626' : '#16a34a' }}>{overviewMsg}</span>
+                    {overviewMsg?.includes('Could not') && (
+                      <button onClick={fetchOverview} className="ml-auto text-[11.5px] flex items-center gap-1 font-semibold" style={{ color: '#7c3aed' }}>
+                        <RefreshCw className="w-3 h-3" /> Retry
+                      </button>
+                    )}</>
+              }
+            </div>
+          )}
+
           {/* Key facts grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
@@ -175,8 +227,8 @@ function PreviewPanel({
               { icon: Calendar,   label: 'Submission Date',  value: formatDate(tender.dueDate) || '—',
                 sub: days !== null && days >= 0 ? `${days} days remaining` : undefined, color: dateColor },
               { icon: MapPin,     label: 'Location',         value: tender.location || '—' },
-              { icon: Banknote,   label: 'EMD Value',        value: overview?.emdValue || '—' },
-              { icon: Clock,      label: 'Contract Period',  value: overview?.completionPeriod || '—' },
+              { icon: Banknote,   label: 'EMD Value',        value: fetchingOverview ? '…' : (overview?.emdValue || '—') },
+              { icon: Clock,      label: 'Contract Period',  value: fetchingOverview ? '…' : (overview?.completionPeriod || '—') },
             ].map(({ icon: Icon, label, value, mono, sub, color }) => (
               <div
                 key={label}
@@ -582,17 +634,61 @@ const selStyle: React.CSSProperties = {
 };
 
 const SESSION_OPTIONS = ['all', 'morning', 'afternoon', 'live', 'manual'];
-const L1_STATUS_OPTIONS = [
-  { value: 'all',       label: 'All Status' },
-  { value: 'qualified', label: 'Auto-Qualified' },
-  { value: 'rejected',  label: 'Auto-Rejected' },
-];
 const DECISION_OPTIONS = [
   { value: 'all',      label: 'All Decisions' },
   { value: 'pending',  label: 'Pending Review' },
   { value: 'accepted', label: 'Accepted' },
   { value: 'rejected', label: 'Rejected' },
 ];
+
+/* ── Status tab bar ────────────────────────────────────────── */
+type TenderStats = { qualified: number; autoRejected: number; pendingReview: number; accepted: number; manualRejected: number };
+
+const STATUS_TABS: { value: string; label: string; statKey?: keyof TenderStats; color: string; activeColor: string }[] = [
+  { value: 'all',       label: 'All',           color: '#64748b', activeColor: '#0f172a' },
+  { value: 'qualified', label: 'Qualified',      statKey: 'qualified',    color: '#7c3aed', activeColor: '#7c3aed' },
+  { value: 'rejected',  label: 'Auto-Rejected',  statKey: 'autoRejected', color: '#dc2626', activeColor: '#dc2626' },
+];
+
+function StatusTabBar({
+  active, stats, onChange,
+}: { active: string; stats: TenderStats | null; onChange: (v: string) => void }) {
+  return (
+    <div className="flex items-center gap-1 rounded-xl p-1"
+      style={{ background: '#f1f5f9', border: '1px solid #e2e8f0' }}>
+      {STATUS_TABS.map(tab => {
+        const count = tab.statKey ? stats?.[tab.statKey] : null;
+        const isActive = active === tab.value;
+        return (
+          <button
+            key={tab.value}
+            onClick={() => onChange(tab.value)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-all"
+            style={{
+              background: isActive ? '#ffffff' : 'transparent',
+              color: isActive ? tab.activeColor : '#64748b',
+              boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              border: isActive ? `1px solid ${tab.activeColor}22` : '1px solid transparent',
+            }}
+          >
+            {tab.label}
+            {count !== null && count !== undefined && (
+              <span
+                className="text-[11px] font-bold px-1.5 py-0.5 rounded-md min-w-[20px] text-center"
+                style={{
+                  background: isActive ? `${tab.activeColor}12` : 'rgba(100,116,139,0.1)',
+                  color: isActive ? tab.activeColor : '#94a3b8',
+                }}
+              >
+                {count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /* ── Main Content ──────────────────────────────────────────── */
 function TendersContent() {
@@ -607,6 +703,11 @@ function TendersContent() {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [previewTender, setPreviewTender] = useState<Tender | null>(null);
   const [rejectTender, setRejectTender]   = useState<Tender | null>(null);
+  const [stats, setStats]           = useState<TenderStats | null>(null);
+
+  useEffect(() => {
+    fetch('/api/tenders/stats').then(r => r.json()).then(j => { if (j.data) setStats(j.data); });
+  }, []);
 
   const fetchTenders = useCallback(async () => {
     setLoading(true);
@@ -633,6 +734,8 @@ function TendersContent() {
         body: JSON.stringify({ l1Decision: decision, l1DecisionReason: reason }),
       });
       await fetchTenders();
+      // Refresh stats badge counts after each decision
+      fetch('/api/tenders/stats').then(r => r.json()).then(j => { if (j.data) setStats(j.data); });
       if (previewTender?.id === id)
         setPreviewTender(prev => prev ? { ...prev, l1Decision: decision, l1DecisionReason: reason || null } : null);
     } finally { setUpdatingId(null); setRejectTender(null); }
@@ -695,6 +798,24 @@ function TendersContent() {
       {/* ── Fetch by ID ─────────────────────────────────────── */}
       <FetchByIdPanel onFetched={fetchTenders} />
 
+      {/* ── Status Tabs ─────────────────────────────────────── */}
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.08 }}
+        className="flex items-center gap-3 mb-3 flex-wrap"
+      >
+        <StatusTabBar
+          active={l1Status}
+          stats={stats}
+          onChange={v => { setL1Status(v); setL1Decision('all'); setPage(1); }}
+        />
+        {l1Status === 'rejected' && (
+          <span className="text-[12px] font-medium px-3 py-1.5 rounded-lg"
+            style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.15)', color: '#dc2626' }}>
+            Showing auto-rejected tenders — excluded by keyword or AI screening
+          </span>
+        )}
+      </motion.div>
+
       {/* ── Filters ─────────────────────────────────────────── */}
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
@@ -722,20 +843,24 @@ function TendersContent() {
           />
         </div>
 
-        {[
-          { val: l1Status,   fn: (v: string) => { setL1Status(v); setPage(1); },   opts: L1_STATUS_OPTIONS },
-          { val: l1Decision, fn: (v: string) => { setL1Decision(v); setPage(1); }, opts: DECISION_OPTIONS },
-          {
-            val: session, fn: (v: string) => { setSession(v); setPage(1); },
-            opts: SESSION_OPTIONS.map(s => ({ value: s, label: s === 'all' ? 'All Sessions' : s.charAt(0).toUpperCase() + s.slice(1) })),
-          },
-        ].map((sel, i) => (
-          <select key={i} value={sel.val} onChange={e => sel.fn(e.target.value)} style={selStyle}
+        {/* Only show decision filter for qualified tenders */}
+        {l1Status !== 'rejected' && (
+          <select value={l1Decision} onChange={e => { setL1Decision(e.target.value); setPage(1); }} style={selStyle}
             onFocus={e => (e.target.style.borderColor = 'rgba(124,58,237,0.35)')}
             onBlur={e => (e.target.style.borderColor = '#e2e8f0')}>
-            {sel.opts.map(o => <option key={o.value} value={o.value} style={{ background: '#ffffff' }}>{o.label}</option>)}
+            {DECISION_OPTIONS.map(o => <option key={o.value} value={o.value} style={{ background: '#ffffff' }}>{o.label}</option>)}
           </select>
-        ))}
+        )}
+
+        <select value={session} onChange={e => { setSession(e.target.value); setPage(1); }} style={selStyle}
+          onFocus={e => (e.target.style.borderColor = 'rgba(124,58,237,0.35)')}
+          onBlur={e => (e.target.style.borderColor = '#e2e8f0')}>
+          {SESSION_OPTIONS.map(s => (
+            <option key={s} value={s} style={{ background: '#ffffff' }}>
+              {s === 'all' ? 'All Sessions' : s.charAt(0).toUpperCase() + s.slice(1)}
+            </option>
+          ))}
+        </select>
 
         {data && (
           <span className="ml-auto text-[12px] font-medium" style={{ color: '#94a3b8' }}>
@@ -914,6 +1039,15 @@ function TendersContent() {
             onAccept={() => updateDecision(previewTender.id, 'accepted')}
             onReject={() => setRejectTender(previewTender)}
             updating={updatingId === previewTender.id}
+            onOverviewFetched={async (id) => {
+              // Re-fetch the updated tender and refresh the preview + list
+              const res = await fetch(`/api/tenders/${id}`);
+              const json = await res.json();
+              if (json.data) {
+                setPreviewTender(json.data);
+                fetchTenders();
+              }
+            }}
           />
         )}
       </AnimatePresence>

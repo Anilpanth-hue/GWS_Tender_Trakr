@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS tenders (
   l1_status                ENUM('pending','qualified','rejected') NOT NULL DEFAULT 'pending',
   l1_qualification_reasons JSON,
   l1_exclusion_reason      TEXT,
+  l1_analysis_source       VARCHAR(50) NULL,
+  l1_scope_of_work         TEXT NULL,
 
   -- Level 1 human decision
   l1_decision              ENUM('accepted','rejected','pending') NOT NULL DEFAULT 'pending',
@@ -164,7 +166,7 @@ INSERT IGNORE INTO scrape_settings (setting_key, setting_value, label) VALUES
 ('scrape_cron_morning',   '0 6 * * *',                 'Morning Scrape Cron (IST)'),
 ('scrape_cron_afternoon', '0 13 * * *',                'Afternoon Scrape Cron (IST)'),
 ('scrape_enabled',        'true',                      'Scraping Enabled'),
-('scrape_max_tenders',    '20',                        'Max Tenders Per Scrape Run');
+('scrape_max_tenders',    '100',                       'Max Tenders Per Scrape Run');
 
 -- ── Default admin user ────────────────────────────────────────────────────────
 -- Password: 'admin123' (bcrypt hash — change immediately in production)

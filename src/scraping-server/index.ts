@@ -1,9 +1,12 @@
 import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
+import fs from 'fs';
+import path from 'path';
+
 import cron from 'node-cron';
 import mysql from 'mysql2/promise';
-import { scrapeAllTenders, fetchTenderDocuments, getBrowserInstance, closeBrowser } from '@/lib/scraper/tender247';
+import { scrapeAllTenders, fetchTenderDocuments, getBrowserInstance, closeBrowser, scrapeDetailPageData } from '@/lib/scraper/tender247';
 import { screenTender, DEFAULT_CONFIG } from '@/lib/screening/rules';
 import { downloadFile, readFileForAI } from '@/lib/pdf/extract';
 import { analyzeL1 } from '@/lib/ai/l1-analyze';
@@ -35,7 +38,9 @@ async function getScreeningConfig(db: mysql.Connection): Promise<ScreeningConfig
     const [rows] = await db.execute('SELECT config_key, config_value FROM screening_config');
     const configMap: Record<string, unknown> = {};
     for (const row of rows as Array<{ config_key: string; config_value: string }>) {
-      configMap[row.config_key] = JSON.parse(row.config_value);
+      configMap[row.config_key] = typeof row.config_value === 'string'
+        ? JSON.parse(row.config_value)
+        : row.config_value;
     }
     return {
       qualifyKeywords:         (configMap.qualify_keywords as string[])          || DEFAULT_CONFIG.qualifyKeywords,
@@ -65,15 +70,16 @@ async function runScrape(session: ScrapeSession) {
       return;
     }
 
-    const email    = settings.tender247_email;
-    const password = settings.tender247_password;
+    const email      = settings.tender247_email;
+    const password   = settings.tender247_password;
+    const maxTenders = parseInt(settings.scrape_max_tenders || '100', 10);
 
     const [runRes] = await db.execute('INSERT INTO scrape_runs (session, status) VALUES (?, ?)', [session, 'running']);
     scrapeRunId = (runRes as mysql.ResultSetHeader).insertId;
-    console.log(`[Scraper Server] Created scrape run #${scrapeRunId}`);
+    console.log(`[Scraper Server] Created scrape run #${scrapeRunId} (max: ${maxTenders})`);
 
     // ── Phase 1: Scrape listing ──────────────────────────────────────────────
-    const rawTenders = await scrapeAllTenders(email, password, session);
+    const rawTenders = await scrapeAllTenders(email, password, session, maxTenders);
     console.log(`[Scraper Server] Scraped ${rawTenders.length} raw tenders`);
 
     const screeningConfig = await getScreeningConfig(db);
@@ -107,6 +113,14 @@ async function runScrape(session: ScrapeSession) {
       );
       const tenderId = (ins as mysql.ResultSetHeader).insertId;
 
+      // Save listing-page EMD immediately — even rejected/metadata_only tenders show something
+      if (raw.listingEmdValue) {
+        await db.execute(
+          'UPDATE tenders SET tender_overview = ? WHERE id = ?',
+          [JSON.stringify({ emdValue: raw.listingEmdValue, fetchedAt: new Date().toISOString() }), tenderId]
+        );
+      }
+
       if (keywordResult.status === 'qualified' && raw.detailUrl) {
         docQueue.push({ id: tenderId, detailUrl: raw.detailUrl, tenderNo: raw.tenderNo, title: raw.title, keywordResult });
       } else {
@@ -136,7 +150,18 @@ async function runScrape(session: ScrapeSession) {
 
           for (const doc of docResult.documents.slice(0, 3)) {
             if (!doc.url) continue;
-            const localPath = await downloadFile(doc.url, tenderId, doc.label);
+            // Skip ZIPs — binary files the AI cannot read without extraction
+            if (doc.url.endsWith('.zip')) continue;
+
+            // Files already downloaded by browser land as local public paths (/documents/...)
+            // Resolve to absolute path instead of trying to HTTP-download them again
+            let localPath: string | null = null;
+            if (doc.url.startsWith('/documents/')) {
+              const candidate = path.resolve(process.cwd(), 'public' + doc.url);
+              localPath = fs.existsSync(candidate) ? candidate : null;
+            } else {
+              localPath = await downloadFile(doc.url, tenderId, doc.label);
+            }
             if (!localPath) continue;
 
             await db.execute(
@@ -148,22 +173,39 @@ async function runScrape(session: ScrapeSession) {
             if (content) docContents.push(content);
           }
 
-          // 3c. AI L1 analysis
+          // 3c. Also scrape detail page for structured fields (EMD, period, etc.)
+          // The browser is already logged in — no extra login needed
+          const detailPageData = await scrapeDetailPageData(browser, detailUrl, tenderNo).catch(() => null);
+
+          // 3d. AI L1 analysis
           const tenderMeta = `Tender No: ${tenderNo}`;
           const l1Result = await analyzeL1(title, tenderMeta, docContents, keywordResult);
 
-          // 3d. Build overview from AI L1 result
+          // 3e. Build overview — AI result takes priority, detail page fills gaps
+          const aiEmd     = l1Result.emdAmount !== 'Not mentioned' ? l1Result.emdAmount : '';
+          const aiPeriod  = l1Result.contractPeriod !== 'Not mentioned' ? l1Result.contractPeriod : '';
           const overview = {
-            t247Id: tenderNo, orgTenderId: '', estimatedCost: '', documentFees: '',
-            emdValue:          l1Result.emdAmount !== 'Not mentioned' ? l1Result.emdAmount : '',
-            completionPeriod:  l1Result.contractPeriod !== 'Not mentioned' ? l1Result.contractPeriod : '',
-            siteLocation: '', contactPerson: '', contactAddress: '',
-            quantity: '', msmeExemption: '', startupExemption: '', jvConsortium: '',
-            performanceBankGuarantee: '', hardCopySubmission: '',
-            eligibilityCriteria: l1Result.eligibilitySummary !== 'Not mentioned' ? l1Result.eligibilitySummary : '',
-            pqcSummary:        l1Result.eligibilitySummary !== 'Not mentioned' ? l1Result.eligibilitySummary : '',
-            fullSummaryText:   l1Result.scopeOfWork || '',
-            fetchedAt:         new Date().toISOString(),
+            t247Id: tenderNo,
+            orgTenderId:            detailPageData?.orgTenderId            || '',
+            estimatedCost:          detailPageData?.estimatedCost          || '',
+            documentFees:           detailPageData?.documentFees           || '',
+            emdValue:               aiEmd      || detailPageData?.emdValue            || '',
+            completionPeriod:       aiPeriod   || detailPageData?.completionPeriod    || '',
+            siteLocation:           detailPageData?.siteLocation           || '',
+            contactPerson:          detailPageData?.contactPerson          || '',
+            contactAddress:         detailPageData?.contactAddress         || '',
+            quantity:               detailPageData?.quantity               || '',
+            msmeExemption:          detailPageData?.msmeExemption          || '',
+            startupExemption:       detailPageData?.startupExemption       || '',
+            jvConsortium:           detailPageData?.jvConsortium           || '',
+            performanceBankGuarantee: detailPageData?.performanceBankGuarantee || '',
+            hardCopySubmission:     detailPageData?.hardCopySubmission     || '',
+            eligibilityCriteria:    l1Result.eligibilitySummary !== 'Not mentioned'
+              ? l1Result.eligibilitySummary
+              : (detailPageData?.eligibilityCriteria || ''),
+            pqcSummary:             detailPageData?.pqcSummary             || '',
+            fullSummaryText:        l1Result.scopeOfWork || detailPageData?.fullSummaryText || '',
+            fetchedAt:              new Date().toISOString(),
           };
 
           // 3e. Update tender

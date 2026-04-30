@@ -16,6 +16,8 @@ export interface RawTender {
   category: string;
   detailUrl: string;
   sourceSession: ScrapeSession;
+  /** EMD value visible on the listing card — available immediately, no detail-page scrape needed */
+  listingEmdValue?: string;
 }
 
 /** Structured overview data extracted from the Tender247 detail page */

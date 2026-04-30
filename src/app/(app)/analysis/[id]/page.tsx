@@ -128,31 +128,50 @@ function WinBadge({ text }: { text: string }) {
 
 /* ── Documents Panel ─────────────────────────────────────────── */
 function DocumentsPanel({ tenderId, detailUrl }: { tenderId: number; detailUrl: string }) {
-  const [docs, setDocs]       = useState<TenderDocument[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [docs, setDocs]         = useState<TenderDocument[]>([]);
+  const [loading, setLoading]   = useState(true);
   const [fetching, setFetching] = useState(false);
+  const [polling, setPolling]   = useState(false);
   const [fetchMsg, setFetchMsg] = useState<string | null>(null);
 
-  const loadDocs = () => {
-    setLoading(true);
-    fetch(`/api/tenders/${tenderId}/documents`)
-      .then(r => r.json())
-      .then(json => setDocs(json.data || []))
-      .finally(() => setLoading(false));
+  const loadDocs = async (): Promise<TenderDocument[]> => {
+    const r    = await fetch(`/api/tenders/${tenderId}/documents`);
+    const json = await r.json();
+    const list: TenderDocument[] = json.data || [];
+    setDocs(list);
+    return list;
   };
+
+  useEffect(() => {
+    setLoading(true);
+    loadDocs().finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { loadDocs(); }, [tenderId]);
+  }, [tenderId]);
 
   async function triggerFetch() {
     setFetching(true); setFetchMsg(null);
     try {
-      const res = await fetch(`/api/tenders/${tenderId}/fetch-documents`, { method: 'POST' });
+      const res  = await fetch(`/api/tenders/${tenderId}/fetch-documents`, { method: 'POST' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed');
-      setFetchMsg('Fetching… refresh in ~30s.');
-      setTimeout(() => { loadDocs(); setFetchMsg(null); }, 35000);
-    } catch (err) { setFetchMsg((err as Error).message); }
-    finally { setFetching(false); }
+
+      // Poll every 5s until documents appear (max 2 min)
+      setPolling(true);
+      setFetchMsg('Fetching documents…');
+      const deadline = Date.now() + 120_000;
+      const timer = setInterval(async () => {
+        const list = await loadDocs();
+        if (list.length > 0 || Date.now() > deadline) {
+          clearInterval(timer);
+          setPolling(false);
+          setFetchMsg(list.length > 0 ? null : 'No documents found on Tender247.');
+        }
+      }, 5000);
+    } catch (err) {
+      setFetchMsg((err as Error).message);
+    } finally {
+      setFetching(false);
+    }
   }
 
   const summaryPdf = docs.find(d => d.docType === 'summary_pdf');
@@ -166,20 +185,31 @@ function DocumentsPanel({ tenderId, detailUrl }: { tenderId: number; detailUrl: 
       ) : docs.length === 0 ? (
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[13.5px] font-medium mb-1" style={{ color: '#64748b' }}>
-              No documents downloaded yet
-            </p>
-            <p className="text-[12px]" style={{ color: '#94a3b8' }}>
-              Documents are fetched during scraping or manually below.
-            </p>
-            {fetchMsg && (
+            {polling ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" style={{ color: '#7c3aed' }} />
+                <p className="text-[13px] font-medium" style={{ color: '#7c3aed' }}>
+                  Downloading documents — will appear automatically…
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="text-[13.5px] font-medium mb-1" style={{ color: '#64748b' }}>
+                  No documents downloaded yet
+                </p>
+                <p className="text-[12px]" style={{ color: '#94a3b8' }}>
+                  Documents are fetched during scraping or manually below.
+                </p>
+              </>
+            )}
+            {fetchMsg && !polling && (
               <p className="text-[11.5px] mt-1.5" style={{ color: '#7c3aed' }}>{fetchMsg}</p>
             )}
           </div>
-          {detailUrl && (
+          {detailUrl && !polling && (
             <button
               onClick={triggerFetch}
-              disabled={fetching || !detailUrl}
+              disabled={fetching}
               className="btn-primary flex-shrink-0 text-[11.5px] disabled:opacity-50"
             >
               {fetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}

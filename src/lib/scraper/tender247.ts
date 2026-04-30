@@ -301,6 +301,7 @@ async function scrapeTendersWithScroll(
         category: '',
         detailUrl: item.detailPath ? `${BASE_URL}${item.detailPath}` : '',
         sourceSession: session,
+        listingEmdValue: item.emdRaw || undefined,
       });
 
       // Stop as soon as we hit the limit
@@ -1077,6 +1078,13 @@ export async function scrapeOverviewByDetailUrl(
   detailUrl: string,
   t247Id: string
 ): Promise<OverviewRefreshResult> {
+  // Always start with a fresh browser — prevents "Connection closed" race condition
+  // when a background scrape is still running and sharing the same browser instance.
+  if (browserInstance) {
+    try { await browserInstance.close(); } catch { /* already dead */ }
+    browserInstance = null;
+  }
+
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
@@ -1085,11 +1093,18 @@ export async function scrapeOverviewByDetailUrl(
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
+
     const loggedIn = await login(page, email, password);
     if (!loggedIn) throw new Error('Failed to login to Tender247. Check credentials in Settings.');
 
-    await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-    await new Promise(r => setTimeout(r, 2500));
+    // Use 'domcontentloaded' first for faster load, then wait for key selector
+    await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
+    // Wait for page to settle and lazy sections to render
+    await new Promise(r => setTimeout(r, 3000));
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await new Promise(r => setTimeout(r, 2000));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await new Promise(r => setTimeout(r, 1000));
 
     const pageData = await extractTenderDetailPage(page, t247Id);
     const { title: _t, bidValueRaw, dueDate, issuedBy: _i, location: _l, ...overview } = pageData;

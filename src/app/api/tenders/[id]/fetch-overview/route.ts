@@ -31,7 +31,11 @@ export async function POST(
       return NextResponse.json<ApiResponse>({ error: 'Tender not found' }, { status: 404 });
     }
 
-    if (!tender.detail_url) {
+    // Construct a fallback URL from tender_no if detail_url is missing
+    const detailUrl = tender.detail_url ||
+      (tender.tender_no ? `https://www.tender247.com/auth/tender/${tender.tender_no}/` : null);
+
+    if (!detailUrl) {
       return NextResponse.json<ApiResponse>(
         { error: 'No detail URL for this tender' },
         { status: 400 }
@@ -60,7 +64,7 @@ export async function POST(
       result = await scrapeOverviewByDetailUrl(
         settings.tender247_email,
         settings.tender247_password,
-        tender.detail_url,
+        detailUrl,
         tender.tender_no
       );
     } finally {
@@ -68,6 +72,11 @@ export async function POST(
     }
 
     const { overview, dueDate: newDueDate, estimatedCostRaw: newValueRaw } = result;
+
+    // Also save detailUrl if it was missing
+    if (!tender.detail_url && detailUrl) {
+      await execute('UPDATE tenders SET detail_url = ? WHERE id = ?', [detailUrl, id]);
+    }
 
     // Detect corrigendum / date extension
     const oldDueDate = tender.due_date?.split('T')[0] ?? null;

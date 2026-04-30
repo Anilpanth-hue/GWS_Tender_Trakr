@@ -111,6 +111,14 @@ export async function POST(req: NextRequest) {
             ]
           );
 
+          // Save listing-page EMD immediately — even rejected/metadata_only tenders show something
+          if (raw.listingEmdValue) {
+            await execute(
+              'UPDATE tenders SET tender_overview = ? WHERE id = ?',
+              [JSON.stringify({ emdValue: raw.listingEmdValue, fetchedAt: new Date().toISOString() }), insertResult.insertId]
+            );
+          }
+
           if (keywordResult.status === 'qualified' && raw.detailUrl) {
             // Queue for doc fetch + AI L1
             docQueue.push({ id: insertResult.insertId, detailUrl: raw.detailUrl, tenderNo: raw.tenderNo, keywordResult });
