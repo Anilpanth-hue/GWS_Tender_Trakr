@@ -8,7 +8,7 @@ import {
   CheckCircle2, XCircle, Clock, X, Building2, MapPin,
   Calendar, DollarSign, FileText, Microscope, AlertCircle,
   ArrowRight, ChevronDown, ChevronUp, Zap, Loader2, Hash,
-  SlidersHorizontal, Banknote, RefreshCw,
+  SlidersHorizontal, Banknote,
 } from 'lucide-react';
 import { formatCurrency, formatDate, getDaysUntilDue, cn } from '@/lib/utils';
 import type { Tender, PaginatedResponse } from '@/types';
@@ -83,46 +83,13 @@ function TenderSummaryText({ text }: { text: string }) {
 
 /* ── Preview Panel ─────────────────────────────────────────── */
 function PreviewPanel({
-  tender, onClose, onAccept, onReject, updating, onOverviewFetched,
+  tender, onClose, onAccept, onReject, updating,
 }: {
   tender: Tender; onClose: () => void;
   onAccept: () => void; onReject: () => void; updating: boolean;
-  onOverviewFetched: (tenderId: number) => void;
 }) {
   const { color: dateColor } = dueDateStyle(tender.dueDate);
   const days = getDaysUntilDue(tender.dueDate);
-  const [fetchingOverview, setFetchingOverview] = useState(false);
-  const [overviewMsg, setOverviewMsg] = useState<string | null>(null);
-
-  // Auto-fetch when: metadata_only AND (no overview at all OR no EMD)
-  // Works even without detailUrl — fetch-overview constructs URL from tender_no
-  const needsDetailFetch = tender.l1AnalysisSource === 'metadata_only' &&
-    (!tender.tenderOverview || !tender.tenderOverview.emdValue);
-
-  // Auto-fetch overview once when panel opens for metadata_only tenders
-  useEffect(() => {
-    if (!needsDetailFetch) return;
-    fetchOverview();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tender.id]);
-
-  async function fetchOverview() {
-    if (fetchingOverview) return;
-    setFetchingOverview(true);
-    setOverviewMsg(null);
-    try {
-      const res = await fetch(`/api/tenders/${tender.id}/fetch-overview`, { method: 'POST' });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Fetch failed');
-      setOverviewMsg('Details fetched.');
-      onOverviewFetched(tender.id);
-    } catch (err) {
-      setOverviewMsg(`Could not fetch: ${(err as Error).message}`);
-    } finally {
-      setFetchingOverview(false);
-    }
-  }
-
   const overview = tender.tenderOverview;
 
   // Derive description from title: split at " - " to get readable parts
@@ -199,26 +166,6 @@ function PreviewPanel({
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
 
-          {/* Fetching overview status */}
-          {(fetchingOverview || overviewMsg) && (
-            <div className="rounded-xl px-4 py-3 flex items-center gap-2.5 text-[12.5px]"
-              style={{
-                background: fetchingOverview ? 'rgba(124,58,237,0.04)' : overviewMsg?.includes('Could not') ? 'rgba(239,68,68,0.04)' : 'rgba(22,163,74,0.04)',
-                border: `1px solid ${fetchingOverview ? 'rgba(124,58,237,0.15)' : overviewMsg?.includes('Could not') ? 'rgba(239,68,68,0.15)' : 'rgba(22,163,74,0.15)'}`,
-              }}
-            >
-              {fetchingOverview
-                ? <><Loader2 className="w-3.5 h-3.5 animate-spin flex-shrink-0" style={{ color: '#7c3aed' }} /><span style={{ color: '#7c3aed' }}>Fetching EMD &amp; contract details from T247… (~30s)</span></>
-                : <><span style={{ color: overviewMsg?.includes('Could not') ? '#dc2626' : '#16a34a' }}>{overviewMsg}</span>
-                    {overviewMsg?.includes('Could not') && (
-                      <button onClick={fetchOverview} className="ml-auto text-[11.5px] flex items-center gap-1 font-semibold" style={{ color: '#7c3aed' }}>
-                        <RefreshCw className="w-3 h-3" /> Retry
-                      </button>
-                    )}</>
-              }
-            </div>
-          )}
-
           {/* Key facts grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
@@ -227,8 +174,8 @@ function PreviewPanel({
               { icon: Calendar,   label: 'Submission Date',  value: formatDate(tender.dueDate) || '—',
                 sub: days !== null && days >= 0 ? `${days} days remaining` : undefined, color: dateColor },
               { icon: MapPin,     label: 'Location',         value: tender.location || '—' },
-              { icon: Banknote,   label: 'EMD Value',        value: fetchingOverview ? '…' : (overview?.emdValue || '—') },
-              { icon: Clock,      label: 'Contract Period',  value: fetchingOverview ? '…' : (overview?.completionPeriod || '—') },
+              { icon: Banknote,   label: 'EMD Value',        value: overview?.emdValue || '—' },
+              { icon: Clock,      label: 'Contract Period',  value: overview?.completionPeriod || '—' },
             ].map(({ icon: Icon, label, value, mono, sub, color }) => (
               <div
                 key={label}
@@ -237,7 +184,7 @@ function PreviewPanel({
               >
                 <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide mb-1.5"
                   style={{ color: '#94a3b8' }}>
-                  <Icon className="w-3 h-3" /> {label}
+                  <span title={label} style={{ cursor: 'help', display: 'inline-flex' }}><Icon className="w-3 h-3" /></span> {label}
                 </div>
                 <p className={cn('text-[13px] font-semibold', mono && 'font-mono')} style={{ color: color || '#0f172a' }}>
                   {value}
@@ -1039,15 +986,6 @@ function TendersContent() {
             onAccept={() => updateDecision(previewTender.id, 'accepted')}
             onReject={() => setRejectTender(previewTender)}
             updating={updatingId === previewTender.id}
-            onOverviewFetched={async (id) => {
-              // Re-fetch the updated tender and refresh the preview + list
-              const res = await fetch(`/api/tenders/${id}`);
-              const json = await res.json();
-              if (json.data) {
-                setPreviewTender(json.data);
-                fetchTenders();
-              }
-            }}
           />
         )}
       </AnimatePresence>

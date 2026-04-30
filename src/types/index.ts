@@ -35,11 +35,14 @@ export interface TenderOverview {
   msmeExemption: string;
   startupExemption: string;
   jvConsortium: string;
+  reverseAuction: string;
   performanceBankGuarantee: string;
   hardCopySubmission: string;
   eligibilityCriteria: string;
   pqcSummary: string;
-  fullSummaryText: string;   // raw AI-summary section from T247 detail page
+  fullSummaryText: string;
+  /** Every raw label→value pair scraped from T247's AI Generated Summary section */
+  aiSummaryFields: Record<string, string>;
   fetchedAt: string;
 }
 

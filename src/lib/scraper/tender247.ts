@@ -601,6 +601,8 @@ export interface SingleTenderResult {
     pqcSummary: string;
     fullSummaryText: string;
     fetchedAt: string;
+    /** Every raw label→value pair from the T247 AI Generated Summary section */
+    aiSummaryFields: Record<string, string>;
   };
 }
 
@@ -693,12 +695,24 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
         }
       }
 
+      // 3) H3 heading row — T247's top section shows EMD, Estimated Cost, Dates as h3
+      //    elements where the label is the h3 direct text and the value is a child <div>.
+      //    e.g. <h3>EMD <svg/> <div>₹ 5.53 Lakh</div></h3>
+      for (const h3 of Array.from(document.querySelectorAll('h3'))) {
+        if (isJunk(h3.textContent || '')) continue;
+        const h3Lower = (h3.textContent || '').toLowerCase().trim();
+        if (!h3Lower.startsWith(labelLower)) continue;
+        const valueDiv = h3.querySelector('div');
+        if (valueDiv) {
+          const val = (valueDiv.textContent || '').trim().replace(/\s+/g, ' ').replace(/\|/g, '').trim();
+          if (val && val.length > 0 && val.length < 200 && !isJunk(val)) return val;
+        }
+      }
+
       return '';
     }
 
     // ── Locate the AI Summary section ────────────────────────────────────────
-    // Tender247 detail pages have an "AI Generated Tender Summary / Eligibility Criteria"
-    // section with a 2-column grid. This is the most reliable data source on the page.
     let summaryRoot: Element | null = null;
     for (const el of Array.from(document.querySelectorAll('div, section'))) {
       const heading = (el.querySelector('h2, h3, h4') || el).textContent || '';
@@ -708,8 +722,49 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
       }
     }
 
-    /** Look up a label in the AI Summary section FIRST, then fall back to whole page */
+    // ── Parse ALL AI Summary rows into a flat key→value map ──────────────────
+    // T247 AI Summary uses a 3-cell grid: [Label] [":"] [Value]
+    // We extract every row here so smartLookup can do a simple dict lookup
+    // instead of DOM traversal — much faster and more reliable.
+    const aiSummaryFields: Record<string, string> = {};
+    if (summaryRoot) {
+      const leafEls = Array.from(summaryRoot.querySelectorAll('div, span, td'))
+        .filter(el => el.children.length <= 1);
+
+      for (const el of leafEls) {
+        const labelText = (el.textContent || '').trim().replace(/\s+/g, ' ');
+        // Skip: empty, pure separator, starts with ₹/digit (it's a value), too long, junk
+        if (!labelText || labelText === ':' || labelText.length > 80) continue;
+        if (/^[₹\d•]/.test(labelText) || isJunk(labelText)) continue;
+
+        const parent = el.parentElement;
+        if (!parent) continue;
+        const siblings = Array.from(parent.children);
+        const idx = siblings.indexOf(el);
+
+        for (let off = 1; off <= 2 && idx + off < siblings.length; off++) {
+          let val = ((siblings[off + idx] as HTMLElement).textContent || '').trim().replace(/\s+/g, ' ');
+          if (val === ':') continue;
+          if (val.startsWith(':')) val = val.slice(1).trim();
+          const isLongField = /eligib|pre.qualif|turnover|experience|technical|financial|pqc|payment|penalty/i.test(labelText);
+          if (val && !isJunk(val) && val.length > 0 && val.length < (isLongField ? 2000 : 600) && val !== labelText) {
+            aiSummaryFields[labelText] = val;
+            break;
+          }
+        }
+      }
+    }
+
+    /** Look up labels against the pre-parsed AI summary map, then fall back to DOM search */
     function smartLookup(...labels: string[]): string {
+      // 1) Check flat map first — O(n) dict lookup, works even if DOM layout varies
+      for (const label of labels) {
+        const labelLower = label.toLowerCase();
+        for (const [key, val] of Object.entries(aiSummaryFields)) {
+          if (key.toLowerCase() === labelLower && val) return val;
+        }
+      }
+      // 2) DOM traversal fallback within summaryRoot (catches edge-case layouts)
       if (summaryRoot) {
         for (const label of labels) {
           const labelLower = label.toLowerCase();
@@ -723,7 +778,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
                 const idx = siblings.indexOf(el);
                 for (let off = 1; off <= 2 && idx + off < siblings.length; off++) {
                   let val = ((siblings[idx + off] as HTMLElement).textContent || '').trim().replace(/\s+/g, ' ');
-                  if (val === ':') continue; // skip T247 separator cell
+                  if (val === ':') continue;
                   if (val.startsWith(':')) val = val.slice(1).trim();
                   if (val && !isJunk(val) && val.length < 600) return val;
                 }
@@ -737,6 +792,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
           }
         }
       }
+      // 3) Whole-page DOM search
       for (const label of labels) {
         const v = findLabelValue(label);
         if (v) return v;
@@ -825,7 +881,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
 
     // ── Full AI summary text ──────────────────────────────────────────────────
     const fullSummaryText = summaryRoot
-      ? (summaryRoot.textContent || '').trim().replace(/\s+/g, ' ').substring(0, 2000)
+      ? (summaryRoot.textContent || '').trim().replace(/\s+/g, ' ').substring(0, 6000)
       : '';
 
     // ── Fallback: scan full page text for EMD and contract period ─────────────
@@ -834,8 +890,20 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
     let emdFallback = emdValue;
     let periodFallback = completionPeriod;
     if (!emdFallback) {
-      const emdMatch = document.body.innerText.match(/EMD[^₹\d]*[₹]?\s*([\d,]+(?:\.\d+)?\s*(?:Cr|L|Lakh|Crore)?)/i);
+      // T247 top section: "EMD" on one line, "₹ 5.53 Lakh" on the next line
+      // Also handles inline formats: "EMD: ₹5,00,000" or "EMD ₹50 Lakh"
+      const emdMatch =
+        document.body.innerText.match(/^EMD\s*[^\n]*\n\s*([₹]?\s*[\d,.]+\s*(?:Cr(?:ore)?|Lakhs?|L)?)/im) ||
+        document.body.innerText.match(/\bEMD\b[^:\n]*:\s*([₹]?\s*[\d,.]+\s*(?:Cr(?:ore)?|Lakhs?|L)?)/i);
       if (emdMatch) emdFallback = emdMatch[1].trim();
+    }
+    if (!periodFallback) {
+      // Also check aiSummaryFields under alternate period keys
+      periodFallback =
+        aiSummaryFields['Completion Period'] ||
+        aiSummaryFields['Contract Period'] ||
+        aiSummaryFields['Work Completion Period'] ||
+        aiSummaryFields['Completion period'] || '';
     }
     if (!periodFallback) {
       const periodMatch = document.body.innerText.match(/(?:completion|contract)\s+period[^:\n]*[:]\s*([^\n]{3,60})/i);
@@ -851,6 +919,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
       quantity, msmeExemption, startupExemption, jvConsortium, reverseAuction,
       performanceBankGuarantee: pbg, hardCopySubmission: hardCopy,
       eligibilityCriteria: eligibility, pqcSummary, fullSummaryText,
+      aiSummaryFields,
       fetchedAt: new Date().toISOString(),
     };
   }, t247Id);
@@ -1046,9 +1115,14 @@ export async function scrapeDetailPageData(
     await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     await new Promise(r => setTimeout(r, 2000));
 
-    // Scroll to trigger lazy-loaded AI Summary section
+    // Scroll to bottom to trigger lazy-loaded AI Summary section
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await new Promise(r => setTimeout(r, 1000));
+    // Wait until AI Summary content is visible in DOM (up to 5 sec), then scroll back
+    await page.waitForFunction(
+      () => /Completion Period|Contract Period|Emd Amount|EMD Value/i.test(document.body.innerText),
+      { timeout: 5000 }
+    ).catch(() => {}); // non-fatal — proceed with whatever loaded
+    await new Promise(r => setTimeout(r, 500));
     await page.evaluate(() => window.scrollTo(0, 0));
 
     const { title: _t, bidValueRaw: _b, dueDate: _d, issuedBy: _i, location: _l, ...overview } =

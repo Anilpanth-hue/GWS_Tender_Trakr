@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as path from 'path';
 import * as fs from 'fs';
-import { execSync } from 'child_process';
 import { queryOne, query, execute } from '@/lib/db';
 import { analyzeTenderL2 } from '@/lib/ai/analyze-tender';
 import type { ApiResponse, TenderL2Analysis } from '@/types';
 
-/** Recursively find all PDFs inside a directory */
+/** Recursively find all PDFs inside a directory (including nested folders) */
 function findPdfsInDir(dir: string): string[] {
   const results: string[] = [];
   if (!fs.existsSync(dir)) return results;
@@ -21,7 +20,9 @@ function findPdfsInDir(dir: string): string[] {
 /** Returns true if the text is a T247 AI meta-response rather than actual criteria */
 function isGarbageText(text: string): boolean {
   if (!text || text.length < 10) return true;
-  return /your request|please specify|once you specify|i can extract|based on the provided text|i am unable to|contact details from|provided text contains/i.test(text);
+  const isMetaResponse = /your request|please specify|once you specify|i am unable to|cannot extract/i.test(text);
+  const hasRealData = /turnover|experience|crore|lakh|certificate|registration|iso|pf|esi|gst|rs.|₹/i.test(text);
+  return isMetaResponse && !hasRealData;
 }
 
 /** Returns true only if the file on disk starts with %PDF magic bytes */
@@ -60,7 +61,6 @@ export async function POST(
 
     console.log(`[Analysis] L2 for tender #${id}: ${String(tender.title).substring(0, 80)}`);
 
-    // Find any downloaded PDF document (individual_doc or summary_pdf)
     const docRows = await query<{ file_path: string | null; doc_type: string }>(
       `SELECT file_path, doc_type
        FROM tender_documents
@@ -69,58 +69,56 @@ export async function POST(
       [id]
     );
 
-    let pdfPath: string | null = null;
-    let t247JsonPath: string | null = null; // T247 "PDF" is actually JSON — lower priority
+    const realPdfPaths: string[] = []; // All real PDFs collected across all sources
+    let t247JsonPath: string | null = null; // T247 JSON fallback (lowest priority)
 
-    // Pass 1: look for a REAL PDF on disk (not T247's fake JSON-as-.pdf)
+    // Pass 1: individual PDF files directly stored on disk
     for (const row of docRows) {
       if (!row.file_path) continue;
       const abs = path.resolve(process.cwd(), 'public', row.file_path.replace(/^\//, ''));
       if (!abs.endsWith('.pdf') || !fs.existsSync(abs)) continue;
       if (isRealPdf(abs)) {
-        pdfPath = abs;
-        console.log(`[Analysis] Using real PDF from disk: ${path.basename(abs)}`);
-        break;
+        realPdfPaths.push(abs);
+        console.log(`[Analysis] Found real PDF: ${path.basename(abs)}`);
       } else {
-        t247JsonPath = t247JsonPath ?? abs; // save first fake-PDF as fallback
-        console.log(`[Analysis] Skipping T247 JSON file (fake .pdf): ${path.basename(abs)}`);
+        t247JsonPath = t247JsonPath ?? abs;
+        console.log(`[Analysis] Skipping T247 JSON (fake .pdf): ${path.basename(abs)}`);
       }
     }
 
-    // Pass 2: extract real PDFs from a ZIP
-    if (!pdfPath) {
-      for (const row of docRows) {
-        if (!row.file_path) continue;
-        const abs = path.resolve(process.cwd(), 'public', row.file_path.replace(/^\//, ''));
-        if (abs.endsWith('.zip') && fs.existsSync(abs)) {
-          const extractDir = abs.slice(0, -4) + '_extracted';
-          try {
-            execSync(`unzip -o -q "${abs}" -d "${extractDir}"`, { timeout: 30000 });
-            const pdfs = findPdfsInDir(extractDir);
-            if (pdfs.length > 0) {
-              pdfPath = pdfs[0];
-              console.log(`[Analysis] Extracted PDF from ZIP: ${path.basename(pdfPath)}`);
-            } else {
-              console.log(`[Analysis] ZIP extracted but no PDFs found inside`);
-            }
-          } catch (e) {
-            console.warn('[Analysis] ZIP extraction failed:', (e as Error).message);
-          }
-          if (pdfPath) break;
+    // Pass 2: extract ALL PDFs from every ZIP (including nested folders)
+    for (const row of docRows) {
+      if (!row.file_path) continue;
+      const abs = path.resolve(process.cwd(), 'public', row.file_path.replace(/^\//, ''));
+      if (!abs.endsWith('.zip') || !fs.existsSync(abs)) continue;
+
+      const extractDir = abs.slice(0, -4) + '_extracted';
+      try {
+        const extractZip = (await import('extract-zip')).default;
+        await extractZip(abs, { dir: extractDir });
+        const pdfs = findPdfsInDir(extractDir); // recursive — finds PDFs in all sub-folders
+        console.log(`[Analysis] ZIP extracted: found ${pdfs.length} PDF(s) inside ${path.basename(abs)}`);
+        for (const p of pdfs) {
+          console.log(`  → ${path.relative(extractDir, p)} (${Math.round(fs.statSync(p).size / 1024)}KB)`);
+          realPdfPaths.push(p);
         }
+      } catch (e) {
+        console.warn(`[Analysis] ZIP extraction failed for ${path.basename(abs)}:`, (e as Error).message);
       }
     }
 
-    // Pass 3: fall back to T247 JSON "PDF" if nothing better was found
-    if (!pdfPath && t247JsonPath) {
-      pdfPath = t247JsonPath;
-      console.log(`[Analysis] Falling back to T247 JSON summary: ${path.basename(pdfPath)}`);
+    // Pass 3: T247 JSON fallback if we have no real PDFs at all
+    const allDocPaths: string[] = realPdfPaths.length > 0
+      ? realPdfPaths
+      : (t247JsonPath ? [t247JsonPath] : []);
+
+    if (allDocPaths.length === 0) {
+      console.log('[Analysis] No documents on disk — using structured text from tender overview.');
+    } else {
+      console.log(`[Analysis] Total document paths to analyse: ${allDocPaths.length}`);
     }
 
-    if (!pdfPath) console.log('[Analysis] No document available — using structured text from tender overview.');
-
-    // Build rich fallback text from stored tender_overview (EMD, eligibility, scope, etc.)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    // Build rich fallback text from stored tender_overview
     let overviewText = '';
     try {
       const ov = typeof tender.tender_overview === 'string'
@@ -128,24 +126,45 @@ export async function POST(
         : tender.tender_overview as Record<string, string> | null;
       if (ov) {
         const lines: string[] = [];
-        if (ov.estimatedCost)      lines.push(`Estimated Cost: ${ov.estimatedCost}`);
-        if (ov.emdValue)           lines.push(`EMD: ${ov.emdValue}`);
-        if (ov.documentFees)       lines.push(`Document Fees: ${ov.documentFees}`);
-        if (ov.completionPeriod)   lines.push(`Completion Period: ${ov.completionPeriod}`);
-        if (ov.siteLocation)       lines.push(`Site Location: ${ov.siteLocation}`);
-        if (ov.msmeExemption)      lines.push(`MSME Exemption: ${ov.msmeExemption}`);
-        if (ov.startupExemption)   lines.push(`Startup Exemption: ${ov.startupExemption}`);
-        if (ov.jvConsortium)       lines.push(`JV / Consortium: ${ov.jvConsortium}`);
-        if (ov.reverseAuction)     lines.push(`Reverse Auction: ${ov.reverseAuction}`);
-        if (ov.hardCopySubmission) lines.push(`Hard Copy Submission: ${ov.hardCopySubmission}`);
-        if (ov.performanceBankGuarantee) lines.push(`Performance Bank Guarantee: ${ov.performanceBankGuarantee}`);
-        if (ov.contactPerson)      lines.push(`Contact Person: ${ov.contactPerson}`);
-        if (ov.contactAddress)     lines.push(`Contact Address: ${ov.contactAddress}`);
+
+        // ── PRIORITY: PQC / Eligibility content goes FIRST — Gemini reads top-down ──
         if (ov.eligibilityCriteria && !isGarbageText(ov.eligibilityCriteria))
-          lines.push(`\nEligibility / PQC Criteria:\n${ov.eligibilityCriteria}`);
+          lines.push(`\n=== ELIGIBILITY / PRE-QUALIFICATION CRITERIA (PQC) ===\n${ov.eligibilityCriteria}`);
         if (ov.pqcSummary && ov.pqcSummary !== ov.eligibilityCriteria && !isGarbageText(ov.pqcSummary))
-          lines.push(`Pre-Qualification Summary:\n${ov.pqcSummary}`);
-        if (ov.fullSummaryText)    lines.push(`\nScope / AI Summary:\n${ov.fullSummaryText}`);
+          lines.push(`=== PRE-QUALIFICATION SUMMARY ===\n${ov.pqcSummary}`);
+
+        // PQC-relevant AI Summary fields — split out first for prominence
+        if (ov.aiSummaryFields && typeof ov.aiSummaryFields === 'object') {
+          const pqcRx = /eligib|pre.qualif|turnover|experience|technical|financial|pqc|qualification/i;
+          const pqcFields = Object.entries(ov.aiSummaryFields as Record<string, string>)
+            .filter(([k, v]) => pqcRx.test(k) && v && String(v).trim().length > 0)
+            .map(([k, v]) => `  ${k}: ${v}`)
+            .join('\n');
+          if (pqcFields) lines.push(`=== T247 PQC FIELDS ===\n${pqcFields}`);
+
+          const otherFields = Object.entries(ov.aiSummaryFields as Record<string, string>)
+            .filter(([k, v]) => !pqcRx.test(k) && v && String(v).trim().length > 0)
+            .map(([k, v]) => `  ${k}: ${v}`)
+            .join('\n');
+          if (otherFields) lines.push(`\n=== T247 AI SUMMARY ===\n${otherFields}`);
+        }
+
+        // ── Structured overview metadata ──
+        if (ov.estimatedCost)            lines.push(`Estimated Cost: ${ov.estimatedCost}`);
+        if (ov.emdValue)                 lines.push(`EMD: ${ov.emdValue}`);
+        if (ov.documentFees)             lines.push(`Document Fees: ${ov.documentFees}`);
+        if (ov.completionPeriod)         lines.push(`Completion Period: ${ov.completionPeriod}`);
+        if (ov.siteLocation)             lines.push(`Site Location: ${ov.siteLocation}`);
+        if (ov.msmeExemption)            lines.push(`MSME Exemption: ${ov.msmeExemption}`);
+        if (ov.startupExemption)         lines.push(`Startup Exemption: ${ov.startupExemption}`);
+        if (ov.jvConsortium)             lines.push(`JV / Consortium: ${ov.jvConsortium}`);
+        if (ov.reverseAuction)           lines.push(`Reverse Auction: ${ov.reverseAuction}`);
+        if (ov.hardCopySubmission)       lines.push(`Hard Copy Submission: ${ov.hardCopySubmission}`);
+        if (ov.performanceBankGuarantee) lines.push(`Performance Bank Guarantee: ${ov.performanceBankGuarantee}`);
+        if (ov.contactPerson)            lines.push(`Contact Person: ${ov.contactPerson}`);
+        if (ov.contactAddress)           lines.push(`Contact Address: ${ov.contactAddress}`);
+        if (ov.fullSummaryText)          lines.push(`\n=== SCOPE / AI SUMMARY ===\n${ov.fullSummaryText}`);
+
         overviewText = lines.join('\n');
       }
     } catch { /* ignore parse errors */ }
@@ -159,15 +178,13 @@ export async function POST(
       overviewText,
     ].filter(Boolean).join('\n');
 
-    // Run Gemini AI analysis
     console.log('[Analysis] Running Gemini AI analysis...');
     const analysis = await analyzeTenderL2(
       tender.title as string,
-      pdfPath,
+      allDocPaths,   // array of ALL document paths
       fallbackText
     );
 
-    // Save analysis to DB
     await execute(
       'UPDATE tenders SET l2_analyzed = TRUE, l2_analysis = ?, updated_at = NOW() WHERE id = ?',
       [JSON.stringify(analysis), id]
