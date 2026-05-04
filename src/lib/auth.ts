@@ -30,6 +30,10 @@ async function createUser(name: string, email: string): Promise<DbUser> {
   return { id: result.insertId, email, name, role: 'viewer' };
 }
 
+async function touchLastLogin(email: string): Promise<void> {
+  await authPool.execute('UPDATE users SET last_login = NOW() WHERE email = ?', [email]);
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     AzureADProvider({
@@ -60,6 +64,7 @@ export const authOptions: NextAuthOptions = {
 
           let dbUser = await findUser(email);
           if (!dbUser) dbUser = await createUser(name as string, email);
+          await touchLastLogin(email);
 
           token.id               = String(dbUser.id);
           token.email            = dbUser.email;

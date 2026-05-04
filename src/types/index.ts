@@ -1,6 +1,7 @@
 // ─── Core Tender Types ────────────────────────────────────────────────────────
 
 export type TenderStatus = 'pending' | 'qualified' | 'rejected';
+export type BidStatus = 'assigned' | 'rejected' | 'bid_evaluated' | 'bid_dropped' | 'bid_participated' | 'tender_awarded' | 'not_awarded';
 export type ScreeningDecision = 'accepted' | 'rejected' | 'pending';
 export type ScrapeSession = 'morning' | 'afternoon' | 'live' | 'manual';
 
@@ -85,6 +86,22 @@ export interface Tender {
   assignedByEmail: string | null;
   assignedByName: string | null;
 
+  // Bid tracking workflow
+  bidStatus: BidStatus | null;
+  bidStatusUpdatedAt: string | null;
+  bidStatusUpdatedBy: string | null;
+  rejectedReason: string | null;
+  bidEvaluatedRemark: string | null;
+  bidDroppedReason: string | null;
+  bidParticipatedRemark: string | null;
+  awardRemark: string | null;
+  l1Bidder: string | null;
+  l1Price: string | null;
+  l2Bidder: string | null;
+  l2Price: string | null;
+  l3Bidder: string | null;
+  l3Price: string | null;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -114,14 +131,14 @@ export interface TenderL2Analysis {
   keyTermsAndConditions: string[];
 
   // GWS-specific intelligence
-  gwsRelevanceScore: number;           // 1–10
-  gwsRelevanceReason: string;          // why this tender is/isn't relevant to GWS
-  relevantBusinessLines: string[];     // e.g. ["Freight Forwarding", "Port Handling"]
-  winProbabilityAssessment: string;    // High / Medium / Low + reasoning
-  keyRisks: string[];                  // risks GWS should be aware of
-  recommendedAction: string;           // Bid / No-Bid / Evaluate Further / Consortium
-  competitiveInsights: string;         // market context, typical competitors
-  estimatedRevenuePotential: string;   // rough revenue / margin estimate if GWS wins
+  gwsRelevanceScore: number;
+  gwsRelevanceReason: string;
+  relevantBusinessLines: string[];
+  winProbabilityAssessment: string;
+  keyRisks: string[];
+  recommendedAction: string;
+  competitiveInsights: string;
+  estimatedRevenuePotential: string;
 
   bestCaseScenario: string;
   worstCaseScenario: string;
@@ -138,10 +155,10 @@ export interface TenderL2Analysis {
 export interface TenderDocument {
   id: number;
   tenderId: number;
-  fileName: string;        // human-readable label, e.g. "MIT", "BOQ Document 1"
-  filePath: string | null; // local disk path for downloaded PDFs
+  fileName: string;
+  filePath: string | null;
   downloadUrl: string | null;
-  docType: string;         // 'summary_pdf' | 'full_docs_zip' | 'individual_doc' | 'other'
+  docType: string;
   fileSize: number | null;
   createdAt: string;
 }

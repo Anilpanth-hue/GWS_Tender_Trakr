@@ -27,6 +27,10 @@ export async function GET() {
               l1_decision, l1_decision_reason, l1_decision_by, l1_decision_at,
               l2_analyzed, l2_analysis,
               owner_email, owner_assigned_at, assigned_by_email, assigned_by_name,
+              bid_status, bid_status_updated_at, bid_status_updated_by,
+              rejected_reason, bid_evaluated_remark, bid_dropped_reason,
+              bid_participated_remark, award_remark,
+              l1_bidder, l1_price, l2_bidder, l2_price, l3_bidder, l3_price,
               created_at, updated_at
        FROM tenders
        WHERE LOWER(owner_email) = ?
@@ -64,6 +68,20 @@ export async function GET() {
       ownerAssignedAt: (t.owner_assigned_at as string) || null,
       assignedByEmail: (t.assigned_by_email as string) || null,
       assignedByName: (t.assigned_by_name as string) || null,
+      bidStatus: (t.bid_status as Tender['bidStatus']) || null,
+      bidStatusUpdatedAt: (t.bid_status_updated_at as string) || null,
+      bidStatusUpdatedBy: (t.bid_status_updated_by as string) || null,
+      rejectedReason: (t.rejected_reason as string) || null,
+      bidEvaluatedRemark: (t.bid_evaluated_remark as string) || null,
+      bidDroppedReason: (t.bid_dropped_reason as string) || null,
+      bidParticipatedRemark: (t.bid_participated_remark as string) || null,
+      awardRemark: (t.award_remark as string) || null,
+      l1Bidder: (t.l1_bidder as string) || null,
+      l1Price: (t.l1_price as string) || null,
+      l2Bidder: (t.l2_bidder as string) || null,
+      l2Price: (t.l2_price as string) || null,
+      l3Bidder: (t.l3_bidder as string) || null,
+      l3Price: (t.l3_price as string) || null,
       createdAt: t.created_at as string,
       updatedAt: t.updated_at as string,
     }));

@@ -8,6 +8,7 @@ import { query, execute } from '@/lib/db';
  */
 export async function POST() {
   try {
+    // ── tenders table columns ─────────────────────────────────────────────
     const existing = await query<{ COLUMN_NAME: string }>(
       `SELECT COLUMN_NAME FROM information_schema.COLUMNS
        WHERE TABLE_SCHEMA = DATABASE()
@@ -30,6 +31,26 @@ export async function POST() {
       ['l1_scope_of_work',   'ALTER TABLE tenders ADD COLUMN l1_scope_of_work TEXT NULL'],
       ['l1_analysis_source', "ALTER TABLE tenders ADD COLUMN l1_analysis_source ENUM('documents','metadata_only') NOT NULL DEFAULT 'metadata_only'"],
     ];
+
+    // ── users table columns ───────────────────────────────────────────────
+    const existingUsers = await query<{ COLUMN_NAME: string }>(
+      `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'users'
+         AND COLUMN_NAME IN ('last_login')`
+    );
+    const hasUsers = new Set(existingUsers.map(r => r.COLUMN_NAME));
+    if (!hasUsers.has('last_login')) {
+      await execute('ALTER TABLE users ADD COLUMN last_login TIMESTAMP NULL');
+      added.push('users.last_login');
+    }
+
+    // ── Seed admin accounts ───────────────────────────────────────────────
+    await execute(
+      `INSERT INTO users (name, email, role) VALUES ('Anil Panth', 'anil.panth@glasswing.in', 'admin'),
+       ('Rajeev Siddhu', 'rajeev.siddhu@glasswing.in', 'admin')
+       ON DUPLICATE KEY UPDATE role = 'admin'`
+    );
 
     for (const [col, sql] of migrations) {
       if (!has.has(col)) {

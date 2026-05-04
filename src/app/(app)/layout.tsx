@@ -13,19 +13,91 @@ import {
   ChevronRight,
   LogOut,
   Bookmark,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { useSession } from "next-auth/react";
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/tenders", label: "Tenders", icon: FileText },
-  { href: "/analysis", label: "L2 Analysis", icon: Microscope },
-  { href: "/my-tenders", label: "My Tenders", icon: Bookmark },
-  { href: "/scrape-runs", label: "Scrape Runs", icon: RefreshCw },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/dashboard",  label: "Dashboard",  icon: LayoutDashboard },
+  { href: "/tenders",    label: "Tenders",    icon: FileText        },
+  { href: "/analysis",   label: "L2 Analysis",icon: Microscope      },
+  { href: "/my-tenders", label: "My Tenders", icon: Bookmark        },
+  { href: "/scrape-runs",label: "Scrape Runs",icon: RefreshCw       },
+  { href: "/settings",   label: "Settings",   icon: Settings        },
 ];
+
+const ADMIN_NAV = [
+  { href: "/admin", label: "Admin Panel", icon: ShieldCheck },
+];
+
+function NavItem({
+  href, label, Icon, pathname, admin = false,
+}: {
+  href: string;
+  label: string;
+  Icon: React.ElementType;
+  pathname: string;
+  admin?: boolean;
+}) {
+  const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href + "/"));
+  const accentColor = admin ? "#7c3aed" : "#7c3aed";
+
+  return (
+    <Link href={href} className="block">
+      <motion.div
+        className={cn(
+          "relative flex items-center gap-2.5 px-3 py-[9px] rounded-[10px]",
+          "text-[13px] font-medium select-none group cursor-pointer",
+        )}
+        style={{
+          color: active ? accentColor : "#64748b",
+          background: active ? "rgba(124,58,237,0.07)" : "transparent",
+        }}
+        whileHover={{ x: 1 }}
+        transition={{ duration: 0.12 }}
+        onMouseEnter={(e) => {
+          if (!active) (e.currentTarget as HTMLDivElement).style.background = "#f8fafc";
+          if (!active) (e.currentTarget as HTMLDivElement).style.color = "#334155";
+        }}
+        onMouseLeave={(e) => {
+          if (!active) (e.currentTarget as HTMLDivElement).style.background = "transparent";
+          if (!active) (e.currentTarget as HTMLDivElement).style.color = "#64748b";
+        }}
+      >
+        {/* Active left accent */}
+        <AnimatePresence>
+          {active && (
+            <motion.div
+              layoutId="nav-accent"
+              className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full"
+              style={{
+                height: 22,
+                background: "linear-gradient(180deg, #7c3aed, #22d3ee)",
+                boxShadow: "0 0 10px rgba(124,58,237,0.5)",
+              }}
+              initial={{ opacity: 0, scaleY: 0.4 }}
+              animate={{ opacity: 1, scaleY: 1 }}
+              exit={{ opacity: 0, scaleY: 0.4 }}
+              transition={{ type: "spring", bounce: 0.2, duration: 0.35 }}
+            />
+          )}
+        </AnimatePresence>
+
+        <Icon
+          className="w-4 h-4 flex-shrink-0 transition-colors duration-150"
+          style={{ color: active ? accentColor : "#94a3b8" }}
+        />
+        <span className="flex-1 leading-none">{label}</span>
+        <ChevronRight
+          className="w-3.5 h-3.5 flex-shrink-0 opacity-0 group-hover:opacity-40 transition-opacity duration-150"
+          style={{ color: active ? accentColor : "#94a3b8" }}
+        />
+      </motion.div>
+    </Link>
+  );
+}
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -122,93 +194,37 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         />
 
         {/* ── Nav ────────────────────────────────────────────── */}
-        <nav className="flex-1 relative z-10 px-3 pb-3 space-y-0.5 overflow-y-auto">
-          <p
-            className="px-2 py-2 text-[9.5px] font-bold uppercase tracking-[0.25em]"
-            style={{ color: "#94a3b8" }}
-          >
+        <nav className="flex-1 relative z-10 px-3 pb-3 overflow-y-auto">
+
+          {/* Platform section */}
+          <p className="px-2 py-2 text-[9.5px] font-bold uppercase tracking-[0.25em]"
+            style={{ color: "#94a3b8" }}>
             Platform
           </p>
+          <div className="space-y-0.5">
+            {NAV.map(({ href, label, icon: Icon }) => (
+              <NavItem key={href} href={href} label={label} Icon={Icon} pathname={pathname} />
+            ))}
+          </div>
 
-          {NAV.map(({ href, label, icon: Icon }) => {
-            const active =
-              pathname === href ||
-              (href !== "/dashboard" && pathname.startsWith(href + "/"));
+          {/* Admin section — only for admins */}
+          {session?.user?.role === 'admin' && (
+            <>
+              {/* Divider */}
+              <div className="mx-2 my-3 h-px"
+                style={{ background: 'linear-gradient(90deg, transparent, rgba(124,58,237,0.15), transparent)' }} />
 
-            return (
-              <Link key={href} href={href} className="block">
-                <motion.div
-                  className={cn(
-                    "relative flex items-center gap-2.5 px-3 py-[9px] rounded-[10px]",
-                    "text-[13px] font-medium select-none group cursor-pointer",
-                  )}
-                  style={{
-                    color: active ? "#7c3aed" : "#64748b",
-                    background: active
-                      ? "rgba(124,58,237,0.07)"
-                      : "transparent",
-                  }}
-                  whileHover={{ x: 1 }}
-                  transition={{ duration: 0.12 }}
-                  onMouseEnter={(e) => {
-                    if (!active)
-                      (e.currentTarget as HTMLDivElement).style.background =
-                        "#f8fafc";
-                    if (!active)
-                      (e.currentTarget as HTMLDivElement).style.color =
-                        "#334155";
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!active)
-                      (e.currentTarget as HTMLDivElement).style.background =
-                        "transparent";
-                    if (!active)
-                      (e.currentTarget as HTMLDivElement).style.color =
-                        "#64748b";
-                  }}
-                >
-                  {/* Active left accent */}
-                  <AnimatePresence>
-                    {active && (
-                      <motion.div
-                        layoutId="nav-accent"
-                        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full"
-                        style={{
-                          height: 22,
-                          background:
-                            "linear-gradient(180deg, #7c3aed, #22d3ee)",
-                          boxShadow: "0 0 10px rgba(124,58,237,0.5)",
-                        }}
-                        initial={{ opacity: 0, scaleY: 0.4 }}
-                        animate={{ opacity: 1, scaleY: 1 }}
-                        exit={{ opacity: 0, scaleY: 0.4 }}
-                        transition={{
-                          type: "spring",
-                          bounce: 0.2,
-                          duration: 0.35,
-                        }}
-                      />
-                    )}
-                  </AnimatePresence>
-
-                  {/* Icon */}
-                  <Icon
-                    className="w-4 h-4 flex-shrink-0 transition-colors duration-150"
-                    style={{ color: active ? "#7c3aed" : "#94a3b8" }}
-                  />
-
-                  {/* Label */}
-                  <span className="flex-1 leading-none">{label}</span>
-
-                  {/* Chevron hint */}
-                  <ChevronRight
-                    className="w-3.5 h-3.5 flex-shrink-0 opacity-0 group-hover:opacity-40 transition-opacity duration-150"
-                    style={{ color: active ? "#7c3aed" : "#94a3b8" }}
-                  />
-                </motion.div>
-              </Link>
-            );
-          })}
+              <p className="px-2 pb-1.5 text-[9.5px] font-bold uppercase tracking-[0.25em] flex items-center gap-1.5"
+                style={{ color: '#7c3aed' }}>
+                <ShieldCheck className="w-3 h-3" /> Admin
+              </p>
+              <div className="space-y-0.5">
+                {ADMIN_NAV.map(({ href, label, icon: Icon }) => (
+                  <NavItem key={href} href={href} label={label} Icon={Icon} pathname={pathname} admin />
+                ))}
+              </div>
+            </>
+          )}
         </nav>
 
         {/* ── Footer status ──────────────────────────────────── */}
