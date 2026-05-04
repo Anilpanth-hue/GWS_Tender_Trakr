@@ -82,6 +82,8 @@ export interface Tender {
   // Ownership assignment
   ownerEmail: string | null;
   ownerAssignedAt: string | null;
+  assignedByEmail: string | null;
+  assignedByName: string | null;
 
   createdAt: string;
   updatedAt: string;

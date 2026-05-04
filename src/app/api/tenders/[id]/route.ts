@@ -56,6 +56,8 @@ export async function GET(
       l2Analysis: parseJsonColumn(tender.l2_analysis),
       ownerEmail: (tender.owner_email as string) || null,
       ownerAssignedAt: (tender.owner_assigned_at as string) || null,
+      assignedByEmail: (tender.assigned_by_email as string) || null,
+      assignedByName: (tender.assigned_by_name as string) || null,
       createdAt: tender.created_at as string,
       updatedAt: tender.updated_at as string,
     };

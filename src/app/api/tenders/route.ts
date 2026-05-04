@@ -99,6 +99,10 @@ export async function GET(req: NextRequest) {
       l1DecisionAt: t.l1_decision_at,
       l2Analyzed: Boolean(t.l2_analyzed),
       l2Analysis: parseJsonColumn(t.l2_analysis),
+      ownerEmail: (t.owner_email as string) || null,
+      ownerAssignedAt: (t.owner_assigned_at as string) || null,
+      assignedByEmail: (t.assigned_by_email as string) || null,
+      assignedByName: (t.assigned_by_name as string) || null,
       createdAt: t.created_at,
       updatedAt: t.updated_at,
     }));

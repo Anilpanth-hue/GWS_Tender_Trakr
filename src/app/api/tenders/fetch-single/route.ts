@@ -41,6 +41,8 @@ function mapTender(row: Record<string, unknown>): Tender {
     l2Analysis: parseJsonColumn(row.l2_analysis),
     ownerEmail: (row.owner_email as string) || null,
     ownerAssignedAt: (row.owner_assigned_at as string) || null,
+    assignedByEmail: (row.assigned_by_email as string) || null,
+    assignedByName: (row.assigned_by_name as string) || null,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

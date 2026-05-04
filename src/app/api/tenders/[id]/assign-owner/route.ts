@@ -131,7 +131,11 @@ FORMATTING:
         prompt: geminiPrompt,
         config: { temperature: 0.4, maxOutputTokens: 2048 },
       });
-      emailHtml = result.text.replace(/^```html?\s*/i, '').replace(/```\s*$/, '').trim();
+      // Strip markdown fences, then find where the HTML actually starts
+      let raw = result.text.replace(/^```html?\s*/i, '').replace(/```\s*$/, '').trim();
+      const htmlStart = raw.indexOf('<');
+      if (htmlStart > 0) raw = raw.substring(htmlStart);
+      emailHtml = raw;
     } catch (geminiErr) {
       console.error('[AssignOwner] Gemini error:', geminiErr);
       // Fallback: plain HTML email
@@ -139,6 +143,23 @@ FORMATTING:
     }
 
     const emailSubject = `Tender Assignment: ${tender.title} [T247-${tender.tender_no}]`;
+
+    // ── Validate DB schema before sending email ───────────────────────────
+    // Fail fast if migration hasn't been run — avoids sending email then crashing on DB update
+    try {
+      await execute(
+        'UPDATE tenders SET owner_email = ?, owner_assigned_at = NOW(), assigned_by_email = ?, assigned_by_name = ?, updated_at = NOW() WHERE id = ?',
+        [assigneeEmail, senderEmail, session.user.name || senderEmail, id]
+      );
+    } catch (dbErr) {
+      const msg = (dbErr as Error).message || '';
+      if (msg.includes('Unknown column')) {
+        return NextResponse.json<ApiResponse>({
+          error: 'Database schema is outdated on this machine. Please call POST /api/admin/run-migration once, then try again.',
+        }, { status: 500 });
+      }
+      throw dbErr;
+    }
 
     // ── Send via Microsoft Graph API ──────────────────────────────────────
     const accessToken = session.accessToken;
@@ -188,12 +209,6 @@ FORMATTING:
         error: `Failed to send email via Outlook (${graphRes.status}). ${errText.substring(0, 200)}`,
       }, { status: 500 });
     }
-
-    // ── Update DB ─────────────────────────────────────────────────────────
-    await execute(
-      'UPDATE tenders SET owner_email = ?, owner_assigned_at = NOW(), updated_at = NOW() WHERE id = ?',
-      [assigneeEmail, id]
-    );
 
     console.log(`[AssignOwner] Tender #${id} assigned to ${assigneeEmail} by ${senderEmail}`);
 

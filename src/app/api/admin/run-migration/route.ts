@@ -14,6 +14,7 @@ export async function POST() {
          AND TABLE_NAME = 'tenders'
          AND COLUMN_NAME IN (
            'owner_email', 'owner_assigned_at',
+           'assigned_by_email', 'assigned_by_name',
            'tender_overview', 'l1_scope_of_work', 'l1_analysis_source'
          )`
     );
@@ -23,6 +24,8 @@ export async function POST() {
     const migrations: Array<[string, string]> = [
       ['owner_email',        'ALTER TABLE tenders ADD COLUMN owner_email VARCHAR(255) NULL'],
       ['owner_assigned_at',  'ALTER TABLE tenders ADD COLUMN owner_assigned_at TIMESTAMP NULL'],
+      ['assigned_by_email',  'ALTER TABLE tenders ADD COLUMN assigned_by_email VARCHAR(255) NULL'],
+      ['assigned_by_name',   'ALTER TABLE tenders ADD COLUMN assigned_by_name VARCHAR(255) NULL'],
       ['tender_overview',    'ALTER TABLE tenders ADD COLUMN tender_overview JSON NULL'],
       ['l1_scope_of_work',   'ALTER TABLE tenders ADD COLUMN l1_scope_of_work TEXT NULL'],
       ['l1_analysis_source', "ALTER TABLE tenders ADD COLUMN l1_analysis_source ENUM('documents','metadata_only') NOT NULL DEFAULT 'metadata_only'"],

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Invoke-WebRequest -Uri \"http://localhost:3000/api/admin/run-migration\" -Method POST -ContentType \"application/json\")",
+      "PowerShell(mysql -h 127.0.0.1 -P 3306 -u root -prootpassword tender_trakr -e \"SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'tender_trakr' AND TABLE_NAME = 'tenders' AND COLUMN_NAME IN \\('assigned_by_email', 'assigned_by_name'\\);\" 2>&1)"
+    ]
+  }
+}

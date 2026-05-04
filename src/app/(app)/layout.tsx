@@ -12,6 +12,7 @@ import {
   TrendingUp,
   ChevronRight,
   LogOut,
+  Bookmark,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NavigationProgress } from "@/components/NavigationProgress";
@@ -21,6 +22,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tenders", label: "Tenders", icon: FileText },
   { href: "/analysis", label: "L2 Analysis", icon: Microscope },
+  { href: "/my-tenders", label: "My Tenders", icon: Bookmark },
   { href: "/scrape-runs", label: "Scrape Runs", icon: RefreshCw },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
