@@ -641,6 +641,11 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
         || /\d{8,}/.test(text); // phone numbers
     }
 
+    /** Returns true if a field value means "data is in the document, not on this page" */
+    function isReferralValue(text: string): boolean {
+      return /^refer\s*to\s*(tender\s*)?doc|^as\s*per\s*(tender\s*)?doc|^see\s*(tender\s*)?doc|^in\s*tender\s*doc|^please\s*refer|^refer\s*bid\s*doc|^n\.?a\.?$|^not\s*applicable$/i.test(text.trim());
+    }
+
     // ── findLabelValue: structured lookup only (no full-body regex scan) ──────
     // Searches table rows and adjacent-element grid patterns.
     // The regex body scan was removed — it caused false positives like
@@ -655,7 +660,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
           const next = td.nextElementSibling;
           if (next) {
             const val = (next.textContent || '').trim().replace(/\s+/g, ' ');
-            if (val && val.length < 600 && !isJunk(val)) return val;
+            if (val && val.length < 600 && !isJunk(val) && !isReferralValue(val)) return val;
           }
         }
       }
@@ -684,14 +689,14 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
           let val = (candidate.textContent || '').trim().replace(/\s+/g, ' ');
           if (val === ':') continue; // skip T247 separator cell
           if (val.startsWith(':')) val = val.slice(1).trim();
-          if (val && val.length > 0 && val.length < 600 && !isJunk(val)) return val;
+          if (val && val.length > 0 && val.length < 600 && !isJunk(val) && !isReferralValue(val)) return val;
         }
 
         // Parent's next sibling (label in one div, value in next div)
         const parentNext = parent.nextElementSibling;
         if (parentNext) {
           const val = (parentNext.textContent || '').trim().replace(/\s+/g, ' ');
-          if (val && val.length > 0 && val.length < 600 && !isJunk(val)) return val;
+          if (val && val.length > 0 && val.length < 600 && !isJunk(val) && !isReferralValue(val)) return val;
         }
       }
 
@@ -705,7 +710,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
         const valueDiv = h3.querySelector('div');
         if (valueDiv) {
           const val = (valueDiv.textContent || '').trim().replace(/\s+/g, ' ').replace(/\|/g, '').trim();
-          if (val && val.length > 0 && val.length < 200 && !isJunk(val)) return val;
+          if (val && val.length > 0 && val.length < 200 && !isJunk(val) && !isReferralValue(val)) return val;
         }
       }
 
@@ -747,7 +752,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
           if (val === ':') continue;
           if (val.startsWith(':')) val = val.slice(1).trim();
           const isLongField = /eligib|pre.qualif|turnover|experience|technical|financial|pqc|payment|penalty/i.test(labelText);
-          if (val && !isJunk(val) && val.length > 0 && val.length < (isLongField ? 2000 : 600) && val !== labelText) {
+          if (val && !isJunk(val) && !isReferralValue(val) && val.length > 0 && val.length < (isLongField ? 2000 : 600) && val !== labelText) {
             aiSummaryFields[labelText] = val;
             break;
           }
@@ -780,13 +785,13 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
                   let val = ((siblings[idx + off] as HTMLElement).textContent || '').trim().replace(/\s+/g, ' ');
                   if (val === ':') continue;
                   if (val.startsWith(':')) val = val.slice(1).trim();
-                  if (val && !isJunk(val) && val.length < 600) return val;
+                  if (val && !isJunk(val) && !isReferralValue(val) && val.length < 600) return val;
                 }
               }
               const next = (el as HTMLElement).nextElementSibling;
               if (next) {
                 const val = (next.textContent || '').trim().replace(/\s+/g, ' ');
-                if (val && !isJunk(val) && val.length < 600) return val;
+                if (val && !isJunk(val) && !isReferralValue(val) && val.length < 600) return val;
               }
             }
           }
@@ -996,14 +1001,26 @@ export async function scrapeSingleTenderById(
 
     console.log(`[Scraper] Loading detail page: ${detailUrl}`);
     await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 30000 });
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 3000));
 
     // Capture the final URL after any redirect (includes the slug: /auth/tender/{id}/{slug})
     // This full URL is what we must use for document download later.
     const finalDetailUrl = page.url().startsWith('http') ? page.url() : detailUrl;
     console.log(`[Scraper] Final detail URL: ${finalDetailUrl}`);
 
+    // Scroll to trigger lazy-loaded AI Summary section, then wait for it to appear
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForFunction(
+      () => /AI Generated|Tender Summary|Completion Period|Contract Period|Emd Amount|EMD Amount/i.test(document.body.innerText),
+      { timeout: 10000 }
+    ).catch(() => console.warn(`[Scraper] #${t247Id} AI Summary section not detected after scroll`));
+    await new Promise(r => setTimeout(r, 1000));
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await new Promise(r => setTimeout(r, 500));
+
     const pageData = await extractTenderDetailPage(page, t247Id);
+    console.log(`[Scraper] #${t247Id} AI summary fields found: ${Object.keys(pageData.aiSummaryFields).join(', ') || 'NONE'}`);
+    console.log(`[Scraper] #${t247Id} EMD: "${pageData.emdValue}" | Completion: "${pageData.completionPeriod}" | Eligibility: ${pageData.eligibilityCriteria ? 'found' : 'empty'}`);
 
     // ── Build final values — priority rules ────────────────────────────────────
     //

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as path from 'path';
 import * as fs from 'fs';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { queryOne, query, execute } from '@/lib/db';
 import { analyzeTenderL2 } from '@/lib/ai/analyze-tender';
 import type { ApiResponse, TenderL2Analysis } from '@/types';
@@ -40,6 +42,11 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json<ApiResponse>({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const { id } = await params;
 

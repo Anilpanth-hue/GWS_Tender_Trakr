@@ -22,5 +22,7 @@ export const config = {
     '/analysis/:path*',
     '/scrape-runs/:path*',
     '/settings/:path*',
+    '/my-tenders/:path*',
+    '/admin/:path*',
   ],
 };

@@ -43,7 +43,9 @@ Rules:
 - "qualified" only if the work maps to GWS logistics capabilities
 - "rejected" if it's civil, IT, medical, solid waste, stationery, supply-only, or completely unrelated to logistics
 - Extract exact figures from the document. Never guess.
-- scopeOfWork must describe the actual work, not just the tender title.`;
+- scopeOfWork must describe the actual work, not just the tender title.
+- If a field value says "Refer to documents", "Refer to tender document", or similar, treat it as NOT available — output "Not mentioned" instead.
+- Never output "Refer to documents" or "Refer to tender" in your response.`;
 
 const L1_PROMPT_TEXT = `You are a senior logistics BD analyst at GlassWing Solutions (GWS), Mumbai.
 Read the tender information below and perform a Level-1 screening.
@@ -63,7 +65,11 @@ Return ONLY valid JSON — no markdown, no explanation:
   "contractPeriod": "Duration or 'Not mentioned'",
   "eligibilitySummary": "Key eligibility/PQC in 1-2 sentences or 'Not mentioned'",
   "confidence": "high" | "medium" | "low"
-}`;
+}
+
+Rules:
+- If a field says "Refer to documents", "Refer to tender document", or similar, treat it as NOT available — output "Not mentioned".
+- Never output "Refer to documents" anywhere in your response.`;
 
 let _ai: Awaited<ReturnType<typeof import('genkit')['genkit']>> | null = null;
 async function getAI() {

@@ -133,18 +133,21 @@ export async function POST(req: NextRequest) {
     // ── Step 3: AI L1 on T247 detail page summary ─────────────────────────────
     // The overview already has structured fields (EMD, contract period, scope,
     // eligibility) scraped directly from the T247 AI Summary section.
+    const isRef = (v: string) => /refer\s*to\s*(tender\s*)?doc|as\s*per\s*(tender\s*)?doc|^n\.?a\.?$/i.test((v || '').trim());
     const overviewText = [
       `Tender No: ${t247Id}`,
-      overview.estimatedCost    && `Estimated Cost: ${overview.estimatedCost}`,
-      overview.emdValue         && `EMD Value: ${overview.emdValue}`,
-      overview.completionPeriod && `Completion Period: ${overview.completionPeriod}`,
-      overview.siteLocation     && `Site Location: ${overview.siteLocation}`,
-      overview.msmeExemption    && `MSME Exemption: ${overview.msmeExemption}`,
-      overview.startupExemption && `Startup Exemption: ${overview.startupExemption}`,
-      overview.jvConsortium     && `JV / Consortium: ${overview.jvConsortium}`,
-      overview.eligibilityCriteria && `\nEligibility Criteria:\n${overview.eligibilityCriteria}`,
+      overview.estimatedCost    && !isRef(overview.estimatedCost)    && `Estimated Cost: ${overview.estimatedCost}`,
+      overview.emdValue         && !isRef(overview.emdValue)         && `EMD Value: ${overview.emdValue}`,
+      overview.completionPeriod && !isRef(overview.completionPeriod) && `Completion Period: ${overview.completionPeriod}`,
+      overview.siteLocation     && !isRef(overview.siteLocation)     && `Site Location: ${overview.siteLocation}`,
+      overview.msmeExemption    && !isRef(overview.msmeExemption)    && `MSME Exemption: ${overview.msmeExemption}`,
+      overview.startupExemption && !isRef(overview.startupExemption) && `Startup Exemption: ${overview.startupExemption}`,
+      overview.jvConsortium     && !isRef(overview.jvConsortium)     && `JV / Consortium: ${overview.jvConsortium}`,
+      overview.eligibilityCriteria && !isRef(overview.eligibilityCriteria) && `\nEligibility Criteria:\n${overview.eligibilityCriteria}`,
       overview.fullSummaryText  && `\nScope / AI Summary:\n${overview.fullSummaryText}`,
     ].filter(Boolean).join('\n');
+
+    console.log(`[fetch-single] Overview fields — EMD: "${overview.emdValue}" | Period: "${overview.completionPeriod}" | Eligibility: ${overview.eligibilityCriteria ? 'present' : 'empty'} | Summary: ${overview.fullSummaryText ? 'present' : 'empty'}`);
 
     const docContents: Array<{ type: 'pdf_base64' | 'text'; content: string }> =
       overviewText ? [{ type: 'text', content: overviewText }] : [];
@@ -153,12 +156,14 @@ export async function POST(req: NextRequest) {
     console.log(`[fetch-single] AI L1: ${l1Result.status} (confidence: ${l1Result.confidence})`);
 
     // Merge AI findings into the structured overview (T247 fields take priority)
+    // Also scrub any "Refer to documents" values that may have slipped through
+    const clean = (v: string | undefined) => (!v || isRef(v)) ? '' : v;
     const tenderOverview = {
       ...overview,
-      emdValue:         overview.emdValue         || (l1Result.emdAmount      !== 'Not mentioned' ? l1Result.emdAmount      : ''),
-      completionPeriod: overview.completionPeriod || (l1Result.contractPeriod !== 'Not mentioned' ? l1Result.contractPeriod : ''),
-      eligibilityCriteria: overview.eligibilityCriteria || (l1Result.eligibilitySummary !== 'Not mentioned' ? l1Result.eligibilitySummary : ''),
-      fullSummaryText:  l1Result.scopeOfWork || overview.fullSummaryText || '',
+      emdValue:            clean(overview.emdValue)         || (l1Result.emdAmount      !== 'Not mentioned' ? l1Result.emdAmount      : ''),
+      completionPeriod:    clean(overview.completionPeriod) || (l1Result.contractPeriod !== 'Not mentioned' ? l1Result.contractPeriod : ''),
+      eligibilityCriteria: clean(overview.eligibilityCriteria) || (l1Result.eligibilitySummary !== 'Not mentioned' ? l1Result.eligibilitySummary : ''),
+      fullSummaryText:     l1Result.scopeOfWork || clean(overview.fullSummaryText) || '',
     };
 
     // ── Step 4: Create scrape_run record ──────────────────────────────────────

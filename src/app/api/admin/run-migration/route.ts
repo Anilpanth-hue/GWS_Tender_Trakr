@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { query, execute } from '@/lib/db';
 
 /**
@@ -7,6 +9,11 @@ import { query, execute } from '@/lib/db';
  * Run once after each deploy that adds new DB columns.
  */
 export async function POST() {
+  const session = await getServerSession(authOptions);
+  if (session?.user?.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     // ── tenders table columns ─────────────────────────────────────────────
     const existing = await query<{ COLUMN_NAME: string }>(

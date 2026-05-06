@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { query } from '@/lib/db';
 import type { ApiResponse } from '@/types';
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json<ApiResponse>({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const statusRows = await query<{ l1_status: string; cnt: number }>(
       'SELECT l1_status, COUNT(*) as cnt FROM tenders GROUP BY l1_status'

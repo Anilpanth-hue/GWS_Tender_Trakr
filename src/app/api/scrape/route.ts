@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { query, execute } from '@/lib/db';
 import type { ApiResponse, ScrapeRun } from '@/types';
 
@@ -33,6 +35,11 @@ function buildOverviewText(
 }
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json<ApiResponse>({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const runs = await query<Record<string, unknown>>(
       'SELECT * FROM scrape_runs ORDER BY started_at DESC LIMIT 50'
@@ -55,6 +62,11 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const authSession = await getServerSession(authOptions);
+  if (authSession?.user?.role !== 'admin') {
+    return NextResponse.json<ApiResponse>({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await req.json() as { session?: string };
     const session = body.session || 'manual';

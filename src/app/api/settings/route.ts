@@ -1,8 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { query, execute } from '@/lib/db';
 import type { ApiResponse } from '@/types';
 
 export async function GET() {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.email) {
+    return NextResponse.json<ApiResponse>({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     const configRows = await query<Record<string, unknown>>(
       'SELECT config_key, config_value, label, description FROM screening_config ORDER BY id'
@@ -32,6 +39,11 @@ export async function GET() {
 }
 
 export async function PATCH(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (session?.user?.role !== 'admin') {
+    return NextResponse.json<ApiResponse>({ error: 'Forbidden' }, { status: 403 });
+  }
+
   try {
     const body = await req.json() as { type: 'config' | 'setting'; key: string; value: unknown };
 
