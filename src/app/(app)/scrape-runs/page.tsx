@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { RefreshCw, CheckCircle2, XCircle, Loader2, Activity, Zap } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
-import type { ScrapeRun } from '@/types';
+import type { FetchRun } from '@/types';
 
 const CARD_STYLE = {
   background: '#ffffff',
@@ -63,10 +63,10 @@ function QualBar({ found, qualified }: { found: number; qualified: number }) {
   );
 }
 
-export default function ScrapeRunsPage() {
-  const [runs, setRuns]       = useState<ScrapeRun[]>([]);
+export default function FetchRunsPage() {
+  const [runs, setRuns]       = useState<FetchRun[]>([]);
   const [loading, setLoading] = useState(true);
-  const [scraping, setScraping] = useState(false);
+  const [fetching, setFetching] = useState(false);
 
   useEffect(() => { fetchRuns(); }, []);
 
@@ -78,8 +78,8 @@ export default function ScrapeRunsPage() {
     setLoading(false);
   }
 
-  async function triggerScrape() {
-    setScraping(true);
+  async function triggerFetch() {
+    setFetching(true);
     try {
       const res  = await fetch('/api/scrape', {
         method: 'POST',
@@ -89,7 +89,7 @@ export default function ScrapeRunsPage() {
       const json = await res.json();
       alert(json.message);
       setTimeout(fetchRuns, 2000);
-    } finally { setScraping(false); }
+    } finally { setFetching(false); }
   }
 
   // Summary stats from runs
@@ -111,10 +111,10 @@ export default function ScrapeRunsPage() {
               style={{ background: 'linear-gradient(135deg, #34d399, #22d3ee)', boxShadow: '0 2px 8px rgba(52,211,153,0.3)' }}>
               <RefreshCw className="w-4 h-4 text-white" />
             </div>
-            <h1 className="text-[26px] font-bold tracking-tight" style={{ color: '#0f172a' }}>Scrape Runs</h1>
+            <h1 className="text-[26px] font-bold tracking-tight" style={{ color: '#0f172a' }}>Fetch Runs</h1>
           </div>
           <p className="text-sm ml-11" style={{ color: '#64748b' }}>
-            History of all Tender247 scraping sessions
+            History of all Tender247 fetch sessions
           </p>
         </div>
         <div className="flex gap-2.5">
@@ -126,11 +126,11 @@ export default function ScrapeRunsPage() {
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
           <button
-            onClick={triggerScrape} disabled={scraping}
+            onClick={triggerFetch} disabled={fetching}
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-[12px] font-semibold text-white disabled:opacity-60 transition-opacity"
             style={{ background: 'linear-gradient(135deg, #d97706, #b45309)', boxShadow: '0 2px 10px rgba(245,158,11,0.3)' }}>
-            <RefreshCw className={`w-3.5 h-3.5 ${scraping ? 'animate-spin' : ''}`} />
-            {scraping ? 'Starting…' : 'Run Manual Scrape'}
+            <RefreshCw className={`w-3.5 h-3.5 ${fetching ? 'animate-spin' : ''}`} />
+            {fetching ? 'Starting…' : 'Run Manual Fetch'}
             <Zap className="w-3 h-3 opacity-80" />
           </button>
         </div>
@@ -140,7 +140,7 @@ export default function ScrapeRunsPage() {
       <div className="grid grid-cols-3 gap-4 mb-6">
         {[
           { label: 'Total Runs',      value: runs.length,  color: '#7c3aed', glow: 'rgba(124,58,237,0.1)',  icon: Activity },
-          { label: 'Total Scraped',   value: totalFound,   color: '#0284c7', glow: 'rgba(2,132,199,0.1)',   icon: RefreshCw },
+          { label: 'Total Fetched',   value: totalFound,   color: '#0284c7', glow: 'rgba(2,132,199,0.1)',   icon: RefreshCw },
           { label: 'Total Qualified', value: totalQual,    color: '#7c3aed', glow: 'rgba(124,58,237,0.1)',   icon: CheckCircle2 },
         ].map(({ label, value, color, glow, icon: Icon }, i) => (
           <motion.div
@@ -186,8 +186,8 @@ export default function ScrapeRunsPage() {
               style={{ background: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.12)' }}>
               <RefreshCw className="w-5 h-5" style={{ color: 'rgba(124,58,237,0.35)' }} />
             </div>
-            <p className="text-[13px]" style={{ color: '#64748b' }}>No scrape runs yet</p>
-            <p className="text-[11px]" style={{ color: '#94a3b8' }}>Click &quot;Run Manual Scrape&quot; to get started</p>
+            <p className="text-[13px]" style={{ color: '#64748b' }}>No fetch runs yet</p>
+            <p className="text-[11px]" style={{ color: '#94a3b8' }}>Click &quot;Run Manual Fetch&quot; to get started</p>
           </div>
         ) : (
           <table className="w-full text-[13px]">
@@ -248,7 +248,7 @@ export default function ScrapeRunsPage() {
             style={{ borderTop: '1px solid #e2e8f0', color: '#94a3b8', background: '#f8fafc' }}>
             <span>{runs.length} total runs</span>
             <span style={{ color: '#16a34a' }}>{successRate}% success rate</span>
-            <span>{totalFound.toLocaleString()} total tenders scraped</span>
+            <span>{totalFound.toLocaleString()} total tenders fetched</span>
           </div>
         )}
       </motion.div>

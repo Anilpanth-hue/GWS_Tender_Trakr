@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatDate } from '@/lib/utils';
-import type { ScrapeRun } from '@/types';
+import type { FetchRun } from '@/types';
 import type { DashboardStats } from '@/app/api/dashboard/route';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -120,9 +120,9 @@ function QualDonut({ q, r, p, l2 }: { q: number; r: number; p: number; l2: numbe
   const total = q + r + p + l2;
   return (
     <div>
-      <div className="relative w-[156px] h-[156px] mx-auto">
+      <div className="relative w-full h-[160px]">
         <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+          <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
             <Pie data={data} cx="50%" cy="50%"
               innerRadius={48} outerRadius={70}
               strokeWidth={0} dataKey="value" paddingAngle={3}>
@@ -153,7 +153,7 @@ function QualDonut({ q, r, p, l2 }: { q: number; r: number; p: number; l2: numbe
 }
 
 /* ── Area chart ─────────────────────────────────────────────────── */
-function RunsChart({ runs }: { runs: ScrapeRun[] }) {
+function RunsChart({ runs }: { runs: FetchRun[] }) {
   const data = [...runs].reverse().slice(-10).map(r => ({
     d: formatDate(r.startedAt)?.slice(0, 5) || '',
     Found: r.totalFound,
@@ -202,7 +202,7 @@ function RunsChart({ runs }: { runs: ScrapeRun[] }) {
 export default function DashboardPage() {
   const [stats, setStats]     = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [scraping, setScraping] = useState(false);
+  const [fetching, setFetching] = useState(false);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -216,18 +216,18 @@ export default function DashboardPage() {
     finally { setLoading(false); }
   }
 
-  async function triggerScrape() {
-    setScraping(true);
+  async function triggerFetch() {
+    setFetching(true);
     try {
       const res = await fetch('/api/scrape', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ session:'manual' }),
       });
       const d = await res.json();
-      alert(d.message || 'Scrape started!');
+      alert(d.message || 'Fetch started!');
       setTimeout(fetchData, 3000);
-    } catch { alert('Failed to start scrape'); }
-    finally { setScraping(false); }
+    } catch { alert('Failed to start fetch'); }
+    finally { setFetching(false); }
   }
 
   if (loading) return (
@@ -260,7 +260,7 @@ export default function DashboardPage() {
     { label:'Auto-Rejected',     value:stats?.rejectedTenders ||0, icon:XCircle,    color:'#ef4444', href:'/tenders?l1Status=rejected',                           delay:0.20 },
     { label:'Manually Rejected', value:stats?.rejectedL1      ||0, icon:XCircle,    color:'#f97316', href:'/tenders?l1Decision=rejected',                         delay:0.25 },
     { label:'L2 AI Analyzed',    value:stats?.l2Analyzed      ||0, icon:Microscope, color:'#22c55e', href:'/analysis',                                             delay:0.30 },
-    { label:'Last Run Found',    value:stats?.todayFound       ||0, icon:RefreshCw, color:'#64748b',                                                                delay:0.35, sub:'Most recent scrape' },
+    { label:'Last Run Found',    value:stats?.todayFound       ||0, icon:RefreshCw, color:'#64748b',                                                                delay:0.35, sub:'Most recent fetch' },
   ];
 
   return (
@@ -285,19 +285,19 @@ export default function DashboardPage() {
             Command Centre
           </h1>
           <p className="text-[13.5px]" style={{ color:'#64748b' }}>
-            Live overview of all scraped and screened tenders
+            Live overview of all fetched and screened tenders
           </p>
         </div>
 
         <motion.button
-          onClick={triggerScrape}
-          disabled={scraping}
+          onClick={triggerFetch}
+          disabled={fetching}
           className="btn-amber"
           whileHover={{ scale:1.03, y:-1 }}
           whileTap={{ scale:0.97 }}
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${scraping ? 'animate-spin' : ''}`} />
-          {scraping ? 'Scraping…' : 'Run Scrape'}
+          <RefreshCw className={`w-3.5 h-3.5 ${fetching ? 'animate-spin' : ''}`} />
+          {fetching ? 'Fetching…' : 'Run Fetch'}
           <Zap className="w-3.5 h-3.5 opacity-80" />
         </motion.button>
       </motion.div>
@@ -335,15 +335,15 @@ export default function DashboardPage() {
       {/* ── Bottom charts row ───────────────────────────────── */}
       <div className="grid grid-cols-12 gap-4">
 
-        {/* Area chart — 7 cols */}
+        {/* Area chart — 6 cols */}
         <motion.div
           initial={{ opacity:0, y:14 }} animate={{ opacity:1, y:0 }}
           transition={{ delay:0.42, duration:0.4, ease:[0.22,1,0.36,1] }}
-          className="col-span-12 lg:col-span-7 grad-card p-6"
+          className="col-span-12 lg:col-span-6 grad-card p-6"
         >
           <div className="flex items-center justify-between mb-5">
             <div>
-              <p className="text-[14px] font-semibold" style={{ color:'#0f172a' }}>Scrape Activity</p>
+              <p className="text-[14px] font-semibold" style={{ color:'#0f172a' }}>Fetch Activity</p>
               <p className="text-[12px] mt-0.5" style={{ color:'#64748b' }}>Found vs Qualified · last 10 runs</p>
             </div>
             <div className="flex gap-5 text-[11.5px]">
@@ -358,11 +358,11 @@ export default function DashboardPage() {
           <div className="h-[196px]"><RunsChart runs={stats?.recentRuns || []} /></div>
         </motion.div>
 
-        {/* Donut — 2 cols */}
+        {/* Donut — 3 cols */}
         <motion.div
           initial={{ opacity:0, y:14 }} animate={{ opacity:1, y:0 }}
           transition={{ delay:0.48, duration:0.4, ease:[0.22,1,0.36,1] }}
-          className="col-span-12 lg:col-span-2 grad-card p-5"
+          className="col-span-12 lg:col-span-3 grad-card p-5"
         >
           <p className="text-[14px] font-semibold mb-4" style={{ color:'#0f172a' }}>Breakdown</p>
           <QualDonut

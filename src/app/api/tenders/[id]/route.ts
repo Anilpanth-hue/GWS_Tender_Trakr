@@ -42,7 +42,7 @@ export async function GET(
       detailUrl: tender.detail_url as string,
       tenderOverview: parseJsonColumn(tender.tender_overview),
       sourceSession: tender.source_session as Tender['sourceSession'],
-      scrapeRunId: tender.scrape_run_id as number,
+      fetchRunId: tender.scrape_run_id as number,
       l1Status: tender.l1_status as Tender['l1Status'],
       l1QualificationReasons: parseJsonColumn(tender.l1_qualification_reasons) ?? [],
       l1ExclusionReason: tender.l1_exclusion_reason as string | null,

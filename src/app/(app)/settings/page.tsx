@@ -201,17 +201,17 @@ export default function SettingsPage() {
           <h1 className="text-[26px] font-bold tracking-tight" style={{ color: '#0f172a' }}>Settings</h1>
         </div>
         <p className="text-sm ml-11" style={{ color: '#64748b' }}>
-          Configure screening rules, keywords, and scraping behaviour
+          Configure screening rules, keywords, and fetch behaviour
         </p>
       </motion.div>
 
       <div className="space-y-5">
 
-        {/* Scraping Configuration */}
+        {/* Fetch Configuration */}
         {settings.length > 0 && (
           <Section
-            title="Scraping Configuration"
-            description="Tender247 credentials and scrape limits"
+            title="Fetch Configuration"
+            description="Tender247 credentials and fetch limits"
             icon={Settings} iconColor="#7c3aed" delay={0}
           >
             <div className="space-y-5">

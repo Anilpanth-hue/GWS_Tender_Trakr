@@ -6,11 +6,11 @@ import path from 'path';
 
 import cron from 'node-cron';
 import mysql from 'mysql2/promise';
-import { scrapeAllTenders, fetchTenderDocuments, getBrowserInstance, closeBrowser, scrapeDetailPageData } from '@/lib/scraper/tender247';
+import { fetchAllTenders, fetchTenderDocuments, getBrowserInstance, closeBrowser, fetchDetailPageData } from '@/lib/scraper/tender247';
 import { screenTender, DEFAULT_CONFIG } from '@/lib/screening/rules';
 import { downloadFile, readFileForAI } from '@/lib/pdf/extract';
 import { analyzeL1 } from '@/lib/ai/l1-analyze';
-import type { ScrapeSession, ScreeningConfig } from '@/types';
+import type { FetchSession, ScreeningConfig } from '@/types';
 
 const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
@@ -52,20 +52,20 @@ async function getScreeningConfig(db: mysql.Connection): Promise<ScreeningConfig
       highValueThresholdCrores:((configMap.high_value_crores as { value: number })?.value) || DEFAULT_CONFIG.highValueThresholdCrores,
     };
   } catch {
-    console.warn('[Scraper Server] Could not load screening config from DB, using defaults');
+    console.warn('[Fetcher Server] Could not load screening config from DB, using defaults');
     return DEFAULT_CONFIG;
   }
 }
 
-async function runScrape(session: ScrapeSession) {
-  console.log(`\n[Scraper Server] ====== Starting ${session} scrape ======`);
+async function runFetch(session: FetchSession) {
+  console.log(`\n[Fetcher Server] ====== Starting ${session} fetch ======`);
   const db = await getDb();
-  let scrapeRunId: number | null = null;
+  let fetchRunId: number | null = null;
 
   try {
     const settings = await getSettings(db);
     if (settings.scrape_enabled === 'false') {
-      console.log('[Scraper Server] Scraping disabled. Skipping.');
+      console.log('[Fetcher Server] Fetching disabled. Skipping.');
       await db.end();
       return;
     }
@@ -75,12 +75,12 @@ async function runScrape(session: ScrapeSession) {
     const maxTenders = parseInt(settings.scrape_max_tenders || '100', 10);
 
     const [runRes] = await db.execute('INSERT INTO scrape_runs (session, status) VALUES (?, ?)', [session, 'running']);
-    scrapeRunId = (runRes as mysql.ResultSetHeader).insertId;
-    console.log(`[Scraper Server] Created scrape run #${scrapeRunId} (max: ${maxTenders})`);
+    fetchRunId = (runRes as mysql.ResultSetHeader).insertId;
+    console.log(`[Fetcher Server] Created fetch run #${fetchRunId} (max: ${maxTenders})`);
 
-    // ── Phase 1: Scrape listing ──────────────────────────────────────────────
-    const rawTenders = await scrapeAllTenders(email, password, session, maxTenders);
-    console.log(`[Scraper Server] Scraped ${rawTenders.length} raw tenders`);
+    // ── Phase 1: Fetch listing ───────────────────────────────────────────────
+    const rawTenders = await fetchAllTenders(email, password, session, maxTenders);
+    console.log(`[Fetcher Server] Fetched ${rawTenders.length} raw tenders`);
 
     const screeningConfig = await getScreeningConfig(db);
     let totalQualified = 0, totalRejected = 0;
@@ -105,7 +105,7 @@ async function runScrape(session: ScrapeSession) {
            l1_status, l1_qualification_reasons, l1_exclusion_reason, l1_analysis_source
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'metadata_only')`,
         [
-          scrapeRunId, raw.title, raw.tenderNo, raw.issuedBy,
+          fetchRunId, raw.title, raw.tenderNo, raw.issuedBy,
           raw.estimatedValue, raw.estimatedValueRaw, raw.dueDate, raw.publishedDate,
           raw.location, raw.category, raw.detailUrl, raw.sourceSession,
           keywordResult.status, JSON.stringify(keywordResult.qualificationReasons), keywordResult.exclusionReason,
@@ -131,7 +131,7 @@ async function runScrape(session: ScrapeSession) {
     // ── Phase 3: Doc fetch + download + AI L1 for keyword-qualified tenders ─
     const browser = getBrowserInstance();
     if (browser && docQueue.length > 0) {
-      console.log(`[Scraper Server] Doc fetch + AI L1 for ${docQueue.length} keyword-qualified tenders…`);
+      console.log(`[Fetcher Server] Doc fetch + AI L1 for ${docQueue.length} keyword-qualified tenders…`);
 
       for (const { id: tenderId, detailUrl, tenderNo, title, keywordResult } of docQueue) {
         try {
@@ -173,9 +173,9 @@ async function runScrape(session: ScrapeSession) {
             if (content) docContents.push(content);
           }
 
-          // 3c. Also scrape detail page for structured fields (EMD, period, etc.)
+          // 3c. Also fetch detail page for structured fields (EMD, period, etc.)
           // The browser is already logged in — no extra login needed
-          const detailPageData = await scrapeDetailPageData(browser, detailUrl, tenderNo).catch(() => null);
+          const detailPageData = await fetchDetailPageData(browser, detailUrl, tenderNo).catch(() => null);
 
           // 3d. AI L1 analysis
           const tenderMeta = `Tender No: ${tenderNo}`;
@@ -228,10 +228,10 @@ async function runScrape(session: ScrapeSession) {
           if (l1Result.status === 'qualified') totalQualified++;
           else totalRejected++;
 
-          console.log(`[Scraper Server] #${tenderId} AI L1: ${l1Result.status} (${l1Result.analysisSource}, ${l1Result.confidence})`);
+          console.log(`[Fetcher Server] #${tenderId} AI L1: ${l1Result.status} (${l1Result.analysisSource}, ${l1Result.confidence})`);
 
         } catch (err) {
-          console.warn(`[Scraper Server] Doc/AI L1 failed for #${tenderId}:`, (err as Error).message);
+          console.warn(`[Fetcher Server] Doc/AI L1 failed for #${tenderId}:`, (err as Error).message);
           totalQualified++; // keyword said qualified — keep it
         }
       }
@@ -241,16 +241,16 @@ async function runScrape(session: ScrapeSession) {
 
     await db.execute(
       `UPDATE scrape_runs SET status = 'completed', total_found = ?, total_qualified = ?, total_rejected = ?, completed_at = NOW() WHERE id = ?`,
-      [rawTenders.length, totalQualified, totalRejected, scrapeRunId]
+      [rawTenders.length, totalQualified, totalRejected, fetchRunId]
     );
-    console.log(`[Scraper Server] Done. Found: ${rawTenders.length}, Qualified: ${totalQualified}, Rejected: ${totalRejected}`);
+    console.log(`[Fetcher Server] Done. Found: ${rawTenders.length}, Qualified: ${totalQualified}, Rejected: ${totalRejected}`);
 
   } catch (err) {
-    console.error('[Scraper Server] Error during scrape:', err);
-    if (scrapeRunId) {
+    console.error('[Fetcher Server] Error during fetch:', err);
+    if (fetchRunId) {
       await db.execute(
         `UPDATE scrape_runs SET status = 'failed', error_message = ?, completed_at = NOW() WHERE id = ?`,
-        [(err as Error).message, scrapeRunId]
+        [(err as Error).message, fetchRunId]
       );
     }
   } finally {
@@ -260,23 +260,23 @@ async function runScrape(session: ScrapeSession) {
 }
 
 // ── Cron Schedules ─────────────────────────────────────────────────────────────
-cron.schedule('0 6 * * *',      () => runScrape('morning'),   { timezone: 'Asia/Kolkata' });
-cron.schedule('0 13 * * *',     () => runScrape('afternoon'), { timezone: 'Asia/Kolkata' });
-cron.schedule('0 8-20/2 * * *', () => runScrape('live'),      { timezone: 'Asia/Kolkata' });
+cron.schedule('0 6 * * *',      () => runFetch('morning'),   { timezone: 'Asia/Kolkata' });
+cron.schedule('0 13 * * *',     () => runFetch('afternoon'), { timezone: 'Asia/Kolkata' });
+cron.schedule('0 8-20/2 * * *', () => runFetch('live'),      { timezone: 'Asia/Kolkata' });
 
-console.log('[Scraper Server] Started. Schedules:');
+console.log('[Fetcher Server] Started. Schedules:');
 console.log('  - Morning:   6:00 AM IST');
 console.log('  - Afternoon: 1:00 PM IST');
 console.log('  - Live:      Every 2 hours (8AM–8PM IST)');
 console.log('  Pipeline: keyword pre-filter → doc fetch → AI L1 (documents-first)');
 
 if (process.argv[2] === 'manual') {
-  console.log('[Scraper Server] Manual trigger detected. Running now…');
-  runScrape('manual').then(() => process.exit(0));
+  console.log('[Fetcher Server] Manual trigger detected. Running now…');
+  runFetch('manual').then(() => process.exit(0));
 }
 
 process.on('SIGINT', async () => {
-  console.log('\n[Scraper Server] Shutting down…');
+  console.log('\n[Fetcher Server] Shutting down…');
   await closeBrowser();
   process.exit(0);
 });

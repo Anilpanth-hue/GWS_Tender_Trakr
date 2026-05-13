@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
       detailUrl: t.detail_url,
       tenderOverview: parseJsonColumn(t.tender_overview),
       sourceSession: t.source_session,
-      scrapeRunId: t.scrape_run_id,
+      fetchRunId: t.scrape_run_id,
       l1Status: t.l1_status,
       l1QualificationReasons: parseJsonColumn(t.l1_qualification_reasons) ?? [],
       l1ExclusionReason: t.l1_exclusion_reason,

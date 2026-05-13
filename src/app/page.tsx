@@ -231,7 +231,7 @@ function DashboardMockup() {
 
         {/* Chart area */}
         <div className="rounded-xl p-3 mb-3" style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-          <p className="text-[10px] font-semibold mb-3" style={{ color: '#94a3b8' }}>SCRAPE ACTIVITY</p>
+          <p className="text-[10px] font-semibold mb-3" style={{ color: '#94a3b8' }}>FETCH ACTIVITY</p>
           <div className="flex items-end gap-1 h-[52px]">
             {bars.map((h, i) => (
               <motion.div
@@ -401,7 +401,7 @@ export default function LandingPage() {
                 className="text-[16px] leading-relaxed mb-8 max-w-[480px]"
                 style={{ color: '#475569' }}
               >
-                Automatically scrape Tender247, screen hundreds of tenders in seconds,
+                Automatically collect tenders from Tender247, screen hundreds in seconds,
                 and let Gemini AI generate deep scope, risk, and BID/NO-BID reports —
                 so your team focuses only on winning opportunities.
               </motion.p>
@@ -534,9 +534,9 @@ export default function LandingPage() {
         <div className="max-w-[1280px] mx-auto px-6 md:px-12">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             {[
-              { val: 1000, suffix: '+', label: 'Tenders Scraped',  color: '#7c3aed' },
+              { val: 1000, suffix: '+', label: 'Tenders Fetched',  color: '#7c3aed' },
               { val: 95,   suffix: '%', label: 'Time Saved on L1', color: '#22d3ee' },
-              { val: 2,    suffix: 'x', label: 'Daily Auto-Scrapes', color: '#f59e0b' },
+              { val: 2,    suffix: 'x', label: 'Daily Auto-Fetches', color: '#f59e0b' },
               { val: 100,  suffix: '%', label: 'AI-Powered L2',    color: '#22c55e' },
             ].map((s, i) => (
               <motion.div
@@ -575,14 +575,14 @@ export default function LandingPage() {
             Everything you need to win tenders
           </h2>
           <p className="text-[15px] max-w-[500px] mx-auto" style={{ color: '#64748b' }}>
-            From automated scraping to deep AI analysis — the full pipeline, end to end.
+            From automated collection to deep AI analysis — the full pipeline, end to end.
           </p>
         </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           <FeatureCard icon={RefreshCw}    color="#7c3aed" delay={0}    tag="Automated"
-            title="Smart Scraping"
-            description="Automatically pulls tenders from Tender247 twice daily — morning and afternoon sessions — using a smart Puppeteer-based scraper." />
+            title="Smart Collection"
+            description="Automatically pulls tenders from Tender247 twice daily — morning and afternoon sessions — using a smart Puppeteer-based collector." />
           <FeatureCard icon={FileSearch}   color="#22d3ee" delay={0.07} tag="L1 Screening"
             title="Keyword & Rule Filtering"
             description="Hundreds of tenders screened in seconds using configurable keyword rules, value thresholds, and category filters. Only relevant ones make it through." />
@@ -593,7 +593,7 @@ export default function LandingPage() {
             title="Accept / Reject Workflow"
             description="Qualified tenders land in your review queue. Accept or reject with a reason — creating a full audit trail of every decision made." />
           <FeatureCard icon={BarChart3}    color="#22c55e" delay={0.28} tag="Analytics"
-            title="Scrape Activity Dashboard"
+            title="Fetch Activity Dashboard"
             description="Live KPIs, trend charts, and breakdown donut — see how many tenders were found, qualified, and analysed across every session." />
           <FeatureCard icon={Building2}    color="#ef4444" delay={0.35} tag="Intelligence"
             title="GWS Business Matching"
@@ -620,7 +620,7 @@ export default function LandingPage() {
                   <span className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: '#22d3ee' }}>The Pipeline</span>
                 </div>
                 <h2 className="text-[36px] font-extrabold tracking-tight mb-4">
-                  <span className="text-gradient">From scrape</span>
+                  <span className="text-gradient">From collection</span>
                   <br />
                   <span style={{ color: '#0f172a' }}>to decision, in minutes</span>
                 </h2>
@@ -661,7 +661,7 @@ export default function LandingPage() {
             {/* Right — steps */}
             <div id="how-it-works" className="pt-2">
               <Step num={1} color="#7c3aed" delay={0}
-                title="Automated Scraping — Twice Daily"
+                title="Automated Collection — Twice Daily"
                 description="The scheduler triggers at morning and afternoon. Puppeteer logs in to Tender247 and extracts every listing — titles, values, deadlines, issuers, and documents." />
               <Step num={2} color="#22d3ee" delay={0.1}
                 title="L1 Keyword Screening"
@@ -706,7 +706,7 @@ export default function LandingPage() {
             {
               icon: Building2, color: '#f59e0b',
               title: 'Role-Based Access',
-              desc: 'Viewer, Manager, and Admin roles control what each team member can see and do — from reading tenders to triggering scrapes.',
+              desc: 'Viewer, Manager, and Admin roles control what each team member can see and do — from reading tenders to triggering fetches.',
             },
           ].map((card, i) => (
             <motion.div
@@ -800,11 +800,11 @@ export default function LandingPage() {
             </div>
             <div>
               <p className="text-[12px] font-bold" style={{ color: '#0f172a' }}>Tender Trakr</p>
-              <p className="text-[10px]" style={{ color: '#94a3b8' }}>by Glasswing Solutions</p>
+              <p className="text-[10px]" style={{ color: '#94a3b8' }}>by Glasswing</p>
             </div>
           </div>
           <p className="text-[12px]" style={{ color: '#94a3b8' }}>
-            Built by Glasswing Solutions · Internal use only · v1.0
+            Built by Glasswing · Internal use only · v1.0
           </p>
         </div>
       </footer>

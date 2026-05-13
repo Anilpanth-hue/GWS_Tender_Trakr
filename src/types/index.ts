@@ -1,9 +1,16 @@
 // ─── Core Tender Types ────────────────────────────────────────────────────────
 
-export type TenderStatus = 'pending' | 'qualified' | 'rejected';
-export type BidStatus = 'assigned' | 'rejected' | 'bid_evaluated' | 'bid_dropped' | 'bid_participated' | 'tender_awarded' | 'not_awarded';
-export type ScreeningDecision = 'accepted' | 'rejected' | 'pending';
-export type ScrapeSession = 'morning' | 'afternoon' | 'live' | 'manual';
+export type TenderStatus = "pending" | "qualified" | "rejected";
+export type BidStatus =
+  | "assigned"
+  | "rejected"
+  | "bid_evaluated"
+  | "bid_dropped"
+  | "bid_participated"
+  | "tender_awarded"
+  | "not_awarded";
+export type ScreeningDecision = "accepted" | "rejected" | "pending";
+export type FetchSession = "morning" | "afternoon" | "live" | "manual";
 
 export interface RawTender {
   title: string;
@@ -16,8 +23,8 @@ export interface RawTender {
   location: string;
   category: string;
   detailUrl: string;
-  sourceSession: ScrapeSession;
-  /** EMD value visible on the listing card — available immediately, no detail-page scrape needed */
+  sourceSession: FetchSession;
+  /** EMD value visible on the listing card — available immediately, no detail-page fetch needed */
   listingEmdValue?: string;
 }
 
@@ -27,6 +34,7 @@ export interface TenderOverview {
   orgTenderId: string;
   estimatedCost: string;
   emdValue: string;
+  Emd_Amount: string;
   documentFees: string;
   completionPeriod: string;
   siteLocation: string;
@@ -42,7 +50,7 @@ export interface TenderOverview {
   eligibilityCriteria: string;
   pqcSummary: string;
   fullSummaryText: string;
-  /** Every raw label→value pair scraped from T247's AI Generated Summary section */
+  /** Every raw label→value pair extracted from T247's AI Generated Summary section */
   aiSummaryFields: Record<string, string>;
   fetchedAt: string;
 }
@@ -60,15 +68,15 @@ export interface Tender {
   category: string;
   detailUrl: string;
   tenderOverview: TenderOverview | null;
-  sourceSession: ScrapeSession;
-  scrapeRunId: number;
+  sourceSession: FetchSession;
+  fetchRunId: number;
 
   // Level 1 screening
   l1Status: TenderStatus;
   l1QualificationReasons: string[];
   l1ExclusionReason: string | null;
   l1ScopeOfWork: string | null;
-  l1AnalysisSource: 'documents' | 'metadata_only';
+  l1AnalysisSource: "documents" | "metadata_only";
 
   // Level 1 human decision
   l1Decision: ScreeningDecision;
@@ -163,10 +171,10 @@ export interface TenderDocument {
   createdAt: string;
 }
 
-export interface ScrapeRun {
+export interface FetchRun {
   id: number;
-  session: ScrapeSession;
-  status: 'running' | 'completed' | 'failed';
+  session: FetchSession;
+  status: "running" | "completed" | "failed";
   totalFound: number;
   totalQualified: number;
   totalRejected: number;
@@ -209,6 +217,6 @@ export interface User {
   id: number;
   name: string;
   email: string;
-  role: 'admin' | 'manager' | 'viewer';
+  role: "admin" | "manager" | "viewer";
   createdAt: string;
 }

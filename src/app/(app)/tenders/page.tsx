@@ -1,57 +1,114 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState, useCallback, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import {
-  Search, Filter, ExternalLink, ChevronLeft, ChevronRight,
-  CheckCircle2, XCircle, Clock, X, Building2, MapPin,
-  Calendar, DollarSign, FileText, Microscope, AlertCircle,
-  ArrowRight, ChevronDown, ChevronUp, Zap, Loader2, Hash,
-  SlidersHorizontal, Banknote,
-} from 'lucide-react';
-import { formatCurrency, formatDate, getDaysUntilDue, cn } from '@/lib/utils';
-import type { Tender, PaginatedResponse } from '@/types';
-import Link from 'next/link';
+  Search,
+  Filter,
+  ExternalLink,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  X,
+  Building2,
+  MapPin,
+  Calendar,
+  DollarSign,
+  FileText,
+  Microscope,
+  AlertCircle,
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  Zap,
+  Loader2,
+  Hash,
+  SlidersHorizontal,
+  Banknote,
+} from "lucide-react";
+import { formatCurrency, formatDate, getDaysUntilDue, cn } from "@/lib/utils";
+import type { Tender, PaginatedResponse } from "@/types";
+import Link from "next/link";
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 function dueDateStyle(d: string | null) {
-  if (!d) return { color: '#94a3b8', label: null };
+  if (!d) return { color: "#94a3b8", label: null };
   const days = getDaysUntilDue(d);
-  if (days === null) return { color: '#94a3b8', label: null };
-  if (days < 0)  return { color: '#ef4444', label: 'Expired' };
-  if (days <= 3) return { color: '#f97316', label: `${days}d left` };
-  if (days <= 7) return { color: '#f59e0b', label: `${days}d left` };
-  return { color: '#64748b', label: `${days}d` };
+  if (days === null) return { color: "#94a3b8", label: null };
+  if (days < 0) return { color: "#ef4444", label: "Expired" };
+  if (days <= 3) return { color: "#f97316", label: `${days}d left` };
+  if (days <= 7) return { color: "#f59e0b", label: `${days}d left` };
+  return { color: "#64748b", label: `${days}d` };
 }
 
 /* ── Badges ─────────────────────────────────────────────────── */
 function DecisionBadge({ d }: { d: string }) {
-  if (d === 'accepted') return (
-    <span className="badge" style={{ background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', color: '#16a34a' }}>
-      <CheckCircle2 className="w-3 h-3" /> Accepted
-    </span>
-  );
-  if (d === 'rejected') return (
-    <span className="badge" style={{ background: 'rgba(239,68,68,0.07)', border: '1px solid rgba(239,68,68,0.18)', color: '#dc2626' }}>
-      <XCircle className="w-3 h-3" /> Rejected
-    </span>
-  );
+  if (d === "accepted")
+    return (
+      <span
+        className="badge"
+        style={{
+          background: "rgba(34,197,94,0.08)",
+          border: "1px solid rgba(34,197,94,0.2)",
+          color: "#16a34a",
+        }}
+      >
+        <CheckCircle2 className="w-3 h-3" /> Accepted
+      </span>
+    );
+  if (d === "rejected")
+    return (
+      <span
+        className="badge"
+        style={{
+          background: "rgba(239,68,68,0.07)",
+          border: "1px solid rgba(239,68,68,0.18)",
+          color: "#dc2626",
+        }}
+      >
+        <XCircle className="w-3 h-3" /> Rejected
+      </span>
+    );
   return (
-    <span className="badge" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', color: '#d97706' }}>
+    <span
+      className="badge"
+      style={{
+        background: "rgba(245,158,11,0.08)",
+        border: "1px solid rgba(245,158,11,0.2)",
+        color: "#d97706",
+      }}
+    >
       <Clock className="w-3 h-3" /> Pending
     </span>
   );
 }
 
 function L1Badge({ status }: { status: string }) {
-  if (status === 'qualified') return (
-    <span className="badge" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)', color: '#7c3aed' }}>
-      Qualified
-    </span>
-  );
+  if (status === "qualified")
+    return (
+      <span
+        className="badge"
+        style={{
+          background: "rgba(124,58,237,0.08)",
+          border: "1px solid rgba(124,58,237,0.2)",
+          color: "#7c3aed",
+        }}
+      >
+        Qualified
+      </span>
+    );
   return (
-    <span className="badge" style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', color: '#64748b' }}>
+    <span
+      className="badge"
+      style={{
+        background: "#f1f5f9",
+        border: "1px solid #e2e8f0",
+        color: "#64748b",
+      }}
+    >
       Excluded
     </span>
   );
@@ -62,19 +119,24 @@ const SUMMARY_LIMIT = 220;
 
 function TenderSummaryText({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
-  const clean = text.replace(/\s+/g, ' ').trim();
+  const clean = text.replace(/\s+/g, " ").trim();
   const needsToggle = clean.length > SUMMARY_LIMIT;
-  const display = needsToggle && !expanded ? clean.slice(0, SUMMARY_LIMIT).trimEnd() + '…' : clean;
+  const display =
+    needsToggle && !expanded
+      ? clean.slice(0, SUMMARY_LIMIT).trimEnd() + "…"
+      : clean;
   return (
     <div>
-      <p className="text-[12.5px] leading-relaxed" style={{ color: '#475569' }}>{display}</p>
+      <p className="text-[12.5px] leading-relaxed" style={{ color: "#475569" }}>
+        {display}
+      </p>
       {needsToggle && (
         <button
-          onClick={() => setExpanded(e => !e)}
+          onClick={() => setExpanded((e) => !e)}
           className="mt-1.5 text-[11.5px] font-semibold transition-colors"
-          style={{ color: '#7c3aed' }}
+          style={{ color: "#7c3aed" }}
         >
-          {expanded ? 'Show less' : 'Read more'}
+          {expanded ? "Show less" : "Read more"}
         </button>
       )}
     </div>
@@ -83,67 +145,115 @@ function TenderSummaryText({ text }: { text: string }) {
 
 /* ── Preview Panel ─────────────────────────────────────────── */
 function PreviewPanel({
-  tender, onClose, onAccept, onReject, updating,
+  tender,
+  onClose,
+  onAccept,
+  onReject,
+  updating,
+  onOverviewRefresh,
 }: {
-  tender: Tender; onClose: () => void;
-  onAccept: () => void; onReject: () => void; updating: boolean;
+  tender: Tender;
+  onClose: () => void;
+  onAccept: () => void;
+  onReject: () => void;
+  updating: boolean;
+  onOverviewRefresh: (tenderId: number, overview: Tender["tenderOverview"]) => void;
 }) {
   const { color: dateColor } = dueDateStyle(tender.dueDate);
   const days = getDaysUntilDue(tender.dueDate);
   const overview = tender.tenderOverview;
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+
+  async function handleRefreshOverview() {
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const res = await fetch(`/api/tenders/${tender.id}/fetch-overview`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Refresh failed");
+      onOverviewRefresh(tender.id, json.data?.overview ?? null);
+    } catch (err) {
+      setRefreshError((err as Error).message);
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   // Derive description from title: split at " - " to get readable parts
   const titleParts = tender.title.split(/\s+-\s+/);
-  const derivedDescription = titleParts.length > 1
-    ? titleParts.slice(1).join(' – ')
-    : tender.title;
+  const derivedDescription =
+    titleParts.length > 1 ? titleParts.slice(1).join(" – ") : tender.title;
 
   return (
     <div className="fixed inset-0 z-40 flex">
       {/* Backdrop */}
       <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
         className="flex-1"
-        style={{ background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)' }}
+        style={{
+          background: "rgba(15,23,42,0.4)",
+          backdropFilter: "blur(4px)",
+        }}
         onClick={onClose}
       />
 
       {/* Panel */}
       <motion.div
-        initial={{ x: '100%' }}
+        initial={{ x: "100%" }}
         animate={{ x: 0 }}
-        exit={{ x: '100%' }}
-        transition={{ type: 'spring', damping: 30, stiffness: 280 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", damping: 30, stiffness: 280 }}
         className="w-full max-w-[500px] flex flex-col h-full"
         style={{
-          background: '#ffffff',
-          borderLeft: '1px solid #e2e8f0',
-          boxShadow: '-20px 0 60px rgba(0,0,0,0.1)',
+          background: "#ffffff",
+          borderLeft: "1px solid #e2e8f0",
+          boxShadow: "-20px 0 60px rgba(0,0,0,0.1)",
         }}
       >
         {/* Header */}
-        <div className="px-6 py-5" style={{ borderBottom: '1px solid #e2e8f0' }}>
+        <div
+          className="px-6 py-5"
+          style={{ borderBottom: "1px solid #e2e8f0" }}
+        >
           <div className="flex items-start gap-3">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2.5 flex-wrap">
                 <L1Badge status={tender.l1Status} />
                 <DecisionBadge d={tender.l1Decision} />
               </div>
-              <h2 className="text-[14.5px] font-semibold leading-snug capitalize" style={{ color: '#0f172a' }}>
+              <h2
+                className="text-[14.5px] font-semibold leading-snug capitalize"
+                style={{ color: "#0f172a" }}
+              >
                 {titleParts[0]}
               </h2>
               {(tender.issuedBy || tender.location) && (
                 <div className="mt-2.5 flex flex-wrap gap-1.5">
                   {tender.issuedBy && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11.5px] font-medium"
-                      style={{ background: 'rgba(14,165,233,0.07)', border: '1px solid rgba(14,165,233,0.2)', color: '#0369a1' }}>
+                    <div
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11.5px] font-medium"
+                      style={{
+                        background: "rgba(14,165,233,0.07)",
+                        border: "1px solid rgba(14,165,233,0.2)",
+                        color: "#0369a1",
+                      }}
+                    >
                       <Building2 className="w-3 h-3 flex-shrink-0" />
                       <span>{tender.issuedBy}</span>
                     </div>
                   )}
                   {tender.location && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11.5px] font-medium"
-                      style={{ background: 'rgba(100,116,139,0.06)', border: '1px solid rgba(100,116,139,0.18)', color: '#475569' }}>
+                    <div
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11.5px] font-medium"
+                      style={{
+                        background: "rgba(100,116,139,0.06)",
+                        border: "1px solid rgba(100,116,139,0.18)",
+                        color: "#475569",
+                      }}
+                    >
                       <MapPin className="w-3 h-3 flex-shrink-0" />
                       <span>{tender.location}</span>
                     </div>
@@ -154,202 +264,427 @@ function PreviewPanel({
             <button
               onClick={onClose}
               className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-              style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
-              onMouseLeave={e => (e.currentTarget.style.background = '#f8fafc')}
+              style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "#f1f5f9")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "#f8fafc")
+              }
             >
-              <X className="w-4 h-4" style={{ color: '#64748b' }} />
+              <X className="w-4 h-4" style={{ color: "#64748b" }} />
             </button>
           </div>
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-
           {/* Key facts grid */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { icon: FileText,   label: 'Tender No',       value: tender.tenderNo, mono: true },
-              { icon: DollarSign, label: 'Est. Value',       value: tender.estimatedValue ? formatCurrency(tender.estimatedValue) : (tender.estimatedValueRaw || '—') },
-              { icon: Calendar,   label: 'Submission Date',  value: formatDate(tender.dueDate) || '—',
-                sub: days !== null && days >= 0 ? `${days} days remaining` : undefined, color: dateColor },
-              { icon: MapPin,     label: 'Location',         value: tender.location || '—' },
-              { icon: Banknote,   label: 'EMD Value',        value: overview?.emdValue || '—' },
-              { icon: Clock,      label: 'Contract Period',  value: overview?.completionPeriod || '—' },
+              {
+                icon: FileText,
+                label: "Tender No",
+                value: tender.tenderNo,
+                mono: true,
+              },
+              {
+                icon: DollarSign,
+                label: "Est. Value",
+                value: tender.estimatedValue
+                  ? formatCurrency(tender.estimatedValue)
+                  : tender.estimatedValueRaw || "—",
+              },
+              {
+                icon: Calendar,
+                label: "Submission Date",
+                value: formatDate(tender.dueDate) || "—",
+                sub:
+                  days !== null && days >= 0
+                    ? `${days} days remaining`
+                    : undefined,
+                color: dateColor,
+              },
+              {
+                icon: MapPin,
+                label: "Location",
+                value: tender.location || "—",
+              },
+              {
+                icon: Banknote,
+                label: "EMD Value",
+                value: overview?.Emd_Amount || overview?.emdValue || "—",
+              },
+              {
+                icon: Clock,
+                label: "Contract Period",
+                value: overview?.completionPeriod || "—",
+              },
             ].map(({ icon: Icon, label, value, mono, sub, color }) => (
               <div
                 key={label}
                 className="rounded-xl p-3"
-                style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
+                style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}
               >
-                <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide mb-1.5"
-                  style={{ color: '#94a3b8' }}>
-                  <span title={label} style={{ cursor: 'help', display: 'inline-flex' }}><Icon className="w-3 h-3" /></span> {label}
+                <div
+                  className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-wide mb-1.5"
+                  style={{ color: "#94a3b8" }}
+                >
+                  <span
+                    title={label}
+                    style={{ cursor: "help", display: "inline-flex" }}
+                  >
+                    <Icon className="w-3 h-3" />
+                  </span>{" "}
+                  {label}
                 </div>
-                <p className={cn('text-[13px] font-semibold', mono && 'font-mono')} style={{ color: color || '#0f172a' }}>
+                <p
+                  className={cn(
+                    "text-[13px] font-semibold",
+                    mono && "font-mono",
+                  )}
+                  style={{ color: color || "#0f172a" }}
+                >
                   {value}
                 </p>
-                {sub && <p className="text-[11px] mt-0.5" style={{ color: '#94a3b8' }}>{sub}</p>}
+                {sub && (
+                  <p
+                    className="text-[11px] mt-0.5"
+                    style={{ color: "#94a3b8" }}
+                  >
+                    {sub}
+                  </p>
+                )}
               </div>
             ))}
           </div>
 
+          {/* Refresh Overview button — shown when EMD or period is missing */}
+          {(!overview?.Emd_Amount && !overview?.emdValue) || !overview?.completionPeriod ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRefreshOverview}
+                disabled={refreshing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11.5px] font-semibold transition-all"
+                style={{
+                  background: refreshing ? "#f1f5f9" : "rgba(14,165,233,0.07)",
+                  border: "1px solid rgba(14,165,233,0.25)",
+                  color: refreshing ? "#94a3b8" : "#0369a1",
+                  cursor: refreshing ? "not-allowed" : "pointer",
+                }}
+              >
+                <Loader2 className={cn("w-3 h-3", refreshing && "animate-spin")} />
+                {refreshing ? "Refreshing overview…" : "Refresh Overview"}
+              </button>
+              {refreshError && (
+                <span className="text-[11px]" style={{ color: "#dc2626" }}>
+                  {refreshError}
+                </span>
+              )}
+            </div>
+          ) : null}
+
           {/* Scope of Work / Description */}
-          <div className="rounded-xl p-4" style={{
-            background: tender.l1ScopeOfWork ? 'rgba(124,58,237,0.03)' : '#f8fafc',
-            border: `1px solid ${tender.l1ScopeOfWork ? 'rgba(124,58,237,0.15)' : '#e2e8f0'}`,
-          }}>
+          <div
+            className="rounded-xl p-4"
+            style={{
+              background: tender.l1ScopeOfWork
+                ? "rgba(124,58,237,0.03)"
+                : "#f8fafc",
+              border: `1px solid ${tender.l1ScopeOfWork ? "rgba(124,58,237,0.15)" : "#e2e8f0"}`,
+            }}
+          >
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[10.5px] font-bold uppercase tracking-wide" style={{ color: tender.l1ScopeOfWork ? 'rgba(124,58,237,0.6)' : '#94a3b8' }}>
+              <p
+                className="text-[10.5px] font-bold uppercase tracking-wide"
+                style={{
+                  color: tender.l1ScopeOfWork
+                    ? "rgba(124,58,237,0.6)"
+                    : "#94a3b8",
+                }}
+              >
                 Scope of Work
               </p>
-              {tender.l1AnalysisSource === 'documents' && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
-                  style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#059669' }}>
+              {tender.l1AnalysisSource === "documents" && (
+                <span
+                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md"
+                  style={{
+                    background: "rgba(16,185,129,0.08)",
+                    border: "1px solid rgba(16,185,129,0.2)",
+                    color: "#059669",
+                  }}
+                >
                   AI · from documents
                 </span>
               )}
             </div>
-            {tender.l1ScopeOfWork
-              ? <TenderSummaryText text={tender.l1ScopeOfWork} />
-              : overview?.fullSummaryText
-                ? <TenderSummaryText text={overview.fullSummaryText} />
-                : <p className="text-[12.5px] leading-relaxed capitalize" style={{ color: '#475569' }}>{derivedDescription}</p>
-            }
-            {tender.l1AnalysisSource === 'documents' && tender.tenderOverview?.eligibilityCriteria && (
-              <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(124,58,237,0.1)' }}>
-                <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color: 'rgba(124,58,237,0.5)' }}>
-                  Eligibility (AI extracted)
-                </p>
-                <p className="text-[12px] leading-relaxed" style={{ color: '#475569' }}>
-                  {tender.tenderOverview.eligibilityCriteria}
-                </p>
-              </div>
+            {tender.l1ScopeOfWork ? (
+              <TenderSummaryText text={tender.l1ScopeOfWork} />
+            ) : overview?.fullSummaryText ? (
+              <TenderSummaryText text={overview.fullSummaryText} />
+            ) : (
+              <p
+                className="text-[12.5px] leading-relaxed capitalize"
+                style={{ color: "#475569" }}
+              >
+                {derivedDescription}
+              </p>
             )}
+            {tender.l1AnalysisSource === "documents" &&
+              tender.tenderOverview?.eligibilityCriteria && (
+                <div
+                  className="mt-3 pt-3"
+                  style={{ borderTop: "1px solid rgba(124,58,237,0.1)" }}
+                >
+                  <p
+                    className="text-[10px] font-bold uppercase tracking-wide mb-1"
+                    style={{ color: "rgba(124,58,237,0.5)" }}
+                  >
+                    Eligibility (AI extracted)
+                  </p>
+                  <p
+                    className="text-[12px] leading-relaxed"
+                    style={{ color: "#475569" }}
+                  >
+                    {tender.tenderOverview.eligibilityCriteria}
+                  </p>
+                </div>
+              )}
           </div>
 
           {/* Issuing authority */}
-          <div className="rounded-xl p-4 flex items-start gap-3"
-            style={{ background: 'rgba(56,189,248,0.05)', border: '1px solid rgba(56,189,248,0.15)' }}>
-            <Building2 className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: '#38bdf8' }} />
+          <div
+            className="rounded-xl p-4 flex items-start gap-3"
+            style={{
+              background: "rgba(56,189,248,0.05)",
+              border: "1px solid rgba(56,189,248,0.15)",
+            }}
+          >
+            <Building2
+              className="w-4 h-4 flex-shrink-0 mt-0.5"
+              style={{ color: "#38bdf8" }}
+            />
             <div>
-              <p className="text-[10.5px] font-bold uppercase tracking-wide mb-1" style={{ color: 'rgba(56,189,248,0.7)' }}>
+              <p
+                className="text-[10.5px] font-bold uppercase tracking-wide mb-1"
+                style={{ color: "rgba(56,189,248,0.7)" }}
+              >
                 Issuing Authority
               </p>
-              <p className="text-[13.5px] font-semibold" style={{ color: '#0f172a' }}>{tender.issuedBy}</p>
+              <p
+                className="text-[13.5px] font-semibold"
+                style={{ color: "#0f172a" }}
+              >
+                {tender.issuedBy}
+              </p>
             </div>
           </div>
 
           {/* L1 reasons */}
-          {tender.l1Status === 'qualified' && tender.l1QualificationReasons?.length > 0 && (
-            <div className="rounded-xl p-4"
-              style={{ background: 'rgba(124,58,237,0.04)', border: '1px solid rgba(124,58,237,0.15)' }}>
-              <p className="text-[10.5px] font-bold uppercase tracking-wide mb-2.5" style={{ color: 'rgba(124,58,237,0.6)' }}>
-                Why auto-qualified
-              </p>
-              <ul className="space-y-1.5">
-                {tender.l1QualificationReasons.map((r, i) => (
-                  <li key={i} className="flex items-start gap-2 text-[12.5px]" style={{ color: '#334155' }}>
-                    <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" style={{ color: '#7c3aed' }} />
-                    {r}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {tender.l1Status === "qualified" &&
+            tender.l1QualificationReasons?.length > 0 && (
+              <div
+                className="rounded-xl p-4"
+                style={{
+                  background: "rgba(124,58,237,0.04)",
+                  border: "1px solid rgba(124,58,237,0.15)",
+                }}
+              >
+                <p
+                  className="text-[10.5px] font-bold uppercase tracking-wide mb-2.5"
+                  style={{ color: "rgba(124,58,237,0.6)" }}
+                >
+                  Why auto-qualified
+                </p>
+                <ul className="space-y-1.5">
+                  {tender.l1QualificationReasons.map((r, i) => (
+                    <li
+                      key={i}
+                      className="flex items-start gap-2 text-[12.5px]"
+                      style={{ color: "#334155" }}
+                    >
+                      <CheckCircle2
+                        className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"
+                        style={{ color: "#7c3aed" }}
+                      />
+                      {r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-          {tender.l1Status === 'rejected' && tender.l1ExclusionReason && (
-            <div className="rounded-xl p-4"
-              style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.15)' }}>
-              <p className="text-[10.5px] font-bold uppercase tracking-wide mb-1.5" style={{ color: 'rgba(239,68,68,0.65)' }}>
+          {tender.l1Status === "rejected" && tender.l1ExclusionReason && (
+            <div
+              className="rounded-xl p-4"
+              style={{
+                background: "rgba(239,68,68,0.04)",
+                border: "1px solid rgba(239,68,68,0.15)",
+              }}
+            >
+              <p
+                className="text-[10.5px] font-bold uppercase tracking-wide mb-1.5"
+                style={{ color: "rgba(239,68,68,0.65)" }}
+              >
                 Why auto-excluded
               </p>
-              <p className="text-[12.5px]" style={{ color: '#475569' }}>{tender.l1ExclusionReason}</p>
+              <p className="text-[12.5px]" style={{ color: "#475569" }}>
+                {tender.l1ExclusionReason}
+              </p>
             </div>
           )}
 
-          {tender.l1Decision === 'rejected' && tender.l1DecisionReason && (
-            <div className="rounded-xl p-4"
-              style={{ background: 'rgba(249,115,22,0.05)', border: '1px solid rgba(249,115,22,0.15)' }}>
-              <p className="text-[10.5px] font-bold uppercase tracking-wide mb-1.5" style={{ color: 'rgba(249,115,22,0.65)' }}>
+          {tender.l1Decision === "rejected" && tender.l1DecisionReason && (
+            <div
+              className="rounded-xl p-4"
+              style={{
+                background: "rgba(249,115,22,0.05)",
+                border: "1px solid rgba(249,115,22,0.15)",
+              }}
+            >
+              <p
+                className="text-[10.5px] font-bold uppercase tracking-wide mb-1.5"
+                style={{ color: "rgba(249,115,22,0.65)" }}
+              >
                 Rejection reason
               </p>
-              <p className="text-[12.5px]" style={{ color: '#475569' }}>{tender.l1DecisionReason}</p>
+              <p className="text-[12.5px]" style={{ color: "#475569" }}>
+                {tender.l1DecisionReason}
+              </p>
             </div>
           )}
 
           {/* What happens next */}
-          <div className="rounded-xl p-4"
-            style={{ background: 'rgba(124,58,237,0.04)', border: '1px solid rgba(124,58,237,0.14)' }}>
-            <p className="text-[10.5px] font-bold uppercase tracking-wide mb-3" style={{ color: 'rgba(124,58,237,0.6)' }}>
+          <div
+            className="rounded-xl p-4"
+            style={{
+              background: "rgba(124,58,237,0.04)",
+              border: "1px solid rgba(124,58,237,0.14)",
+            }}
+          >
+            <p
+              className="text-[10.5px] font-bold uppercase tracking-wide mb-3"
+              style={{ color: "rgba(124,58,237,0.6)" }}
+            >
               What happens next
             </p>
             {[
-              'Accept → enters L2 Analysis queue',
-              'Gemini AI reads document, produces GWS intelligence report',
-              'Output: scope, PQC, fit score, BID / NO-BID recommendation',
+              "Accept → enters L2 Analysis queue",
+              "Gemini AI reads document, produces GWS intelligence report",
+              "Output: scope, PQC, fit score, BID / NO-BID recommendation",
             ].map((s, i) => (
               <div key={i} className="flex items-start gap-2.5 mb-2 last:mb-0">
-                <span className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5"
-                  style={{ background: 'rgba(124,58,237,0.1)', color: '#7c3aed' }}>{i + 1}</span>
-                <p className="text-[12.5px]" style={{ color: '#475569' }}>{s}</p>
+                <span
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5"
+                  style={{
+                    background: "rgba(124,58,237,0.1)",
+                    color: "#7c3aed",
+                  }}
+                >
+                  {i + 1}
+                </span>
+                <p className="text-[12.5px]" style={{ color: "#475569" }}>
+                  {s}
+                </p>
               </div>
             ))}
           </div>
 
           {tender.detailUrl && (
-            <a href={tender.detailUrl} target="_blank" rel="noopener noreferrer"
+            <a
+              href={tender.detailUrl}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center justify-between gap-3 rounded-xl px-4 py-3 transition-colors group"
-              style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = 'rgba(124,58,237,0.25)')}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = '#e2e8f0')}>
-              <span className="text-[13px] font-medium" style={{ color: '#64748b' }}>
+              style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.borderColor = "rgba(124,58,237,0.25)")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.borderColor = "#e2e8f0")
+              }
+            >
+              <span
+                className="text-[13px] font-medium"
+                style={{ color: "#64748b" }}
+              >
                 View on Tender247
               </span>
-              <ExternalLink className="w-4 h-4 opacity-40 group-hover:opacity-70 transition-opacity" style={{ color: '#7c3aed' }} />
+              <ExternalLink
+                className="w-4 h-4 opacity-40 group-hover:opacity-70 transition-opacity"
+                style={{ color: "#7c3aed" }}
+              />
             </a>
           )}
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4" style={{ borderTop: '1px solid #e2e8f0', background: '#f8fafc' }}>
-          {tender.l1Decision === 'accepted' ? (
+        <div
+          className="px-6 py-4"
+          style={{ borderTop: "1px solid #e2e8f0", background: "#f8fafc" }}
+        >
+          {tender.l1Decision === "accepted" ? (
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-[13px] font-medium flex-1" style={{ color: '#16a34a' }}>
+              <div
+                className="flex items-center gap-2 text-[13px] font-medium flex-1"
+                style={{ color: "#16a34a" }}
+              >
                 <CheckCircle2 className="w-4 h-4" /> Accepted for L2 Analysis
               </div>
-              <Link href={`/analysis/${tender.id}`}
-                className="btn-primary text-[12px]">
+              <Link
+                href={`/analysis/${tender.id}`}
+                className="btn-primary text-[12px]"
+              >
                 <Microscope className="w-3.5 h-3.5" /> Open L2
               </Link>
             </div>
-          ) : tender.l1Status === 'qualified' ? (
+          ) : tender.l1Status === "qualified" ? (
             <div className="space-y-2.5">
-              <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color: '#94a3b8' }}>
+              <p
+                className="text-[11px] font-bold uppercase tracking-wide"
+                style={{ color: "#94a3b8" }}
+              >
                 Your Decision
               </p>
               <div className="flex gap-2.5">
                 <button
-                  disabled={updating} onClick={onAccept}
+                  disabled={updating}
+                  onClick={onAccept}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
-                  style={{ background: 'linear-gradient(135deg, #f59e0b, #f97316)', boxShadow: '0 2px 12px rgba(245,158,11,0.3)' }}
+                  style={{
+                    background: "linear-gradient(135deg, #f59e0b, #f97316)",
+                    boxShadow: "0 2px 12px rgba(245,158,11,0.3)",
+                  }}
                 >
                   <CheckCircle2 className="w-4 h-4" /> Accept → L2
                 </button>
                 <button
-                  disabled={updating} onClick={onReject}
+                  disabled={updating}
+                  onClick={onReject}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-bold disabled:opacity-50 transition-all"
-                  style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', color: '#dc2626' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.06)')}
+                  style={{
+                    background: "rgba(239,68,68,0.06)",
+                    border: "1px solid rgba(239,68,68,0.2)",
+                    color: "#dc2626",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = "rgba(239,68,68,0.1)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = "rgba(239,68,68,0.06)")
+                  }
                 >
                   <XCircle className="w-4 h-4" /> Reject
                 </button>
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2 text-[13px]" style={{ color: '#94a3b8' }}>
-              <AlertCircle className="w-4 h-4" /> Auto-excluded — no L2 available
+            <div
+              className="flex items-center gap-2 text-[13px]"
+              style={{ color: "#94a3b8" }}
+            >
+              <AlertCircle className="w-4 h-4" /> Auto-excluded — no L2
+              available
             </div>
           )}
         </div>
@@ -359,55 +694,76 @@ function PreviewPanel({
 }
 
 /* ── Reject Modal ──────────────────────────────────────────── */
-function RejectModal({ tender, onConfirm, onCancel }: {
-  tender: Tender; onConfirm: (r: string) => void; onCancel: () => void;
+function RejectModal({
+  tender,
+  onConfirm,
+  onCancel,
+}: {
+  tender: Tender;
+  onConfirm: (r: string) => void;
+  onCancel: () => void;
 }) {
-  const [reason, setReason] = useState('');
+  const [reason, setReason] = useState("");
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4"
-      style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(8px)' }}>
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50 p-4"
+      style={{ background: "rgba(15,23,42,0.5)", backdropFilter: "blur(8px)" }}
+    >
       <motion.div
-        initial={{ scale: 0.94, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
+        initial={{ scale: 0.94, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.94, opacity: 0 }}
-        transition={{ type: 'spring', duration: 0.3, bounce: 0.15 }}
+        transition={{ type: "spring", duration: 0.3, bounce: 0.15 }}
         className="w-full max-w-md rounded-2xl p-6"
         style={{
-          background: '#ffffff',
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 24px 60px rgba(0,0,0,0.15)',
+          background: "#ffffff",
+          border: "1px solid #e2e8f0",
+          boxShadow: "0 24px 60px rgba(0,0,0,0.15)",
         }}
       >
-        <h3 className="font-bold text-[15px] mb-1" style={{ color: '#0f172a' }}>Reject this tender?</h3>
-        <p className="text-[12.5px] mb-4 line-clamp-2 capitalize" style={{ color: '#64748b' }}>
+        <h3 className="font-bold text-[15px] mb-1" style={{ color: "#0f172a" }}>
+          Reject this tender?
+        </h3>
+        <p
+          className="text-[12.5px] mb-4 line-clamp-2 capitalize"
+          style={{ color: "#64748b" }}
+        >
           {tender.title}
         </p>
         <textarea
-          autoFocus rows={3} value={reason}
-          onChange={e => setReason(e.target.value)}
+          autoFocus
+          rows={3}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
           className="w-full rounded-xl p-3 text-[13px] resize-none focus:outline-none transition-all"
           placeholder="Why is this not relevant for GWS? (wrong sector, too small, geography…)"
           style={{
-            background: '#f8fafc',
-            border: '1px solid #e2e8f0',
-            color: '#0f172a', caretColor: '#7c3aed',
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            color: "#0f172a",
+            caretColor: "#7c3aed",
           }}
-          onFocus={e => {
-            e.target.style.borderColor = 'rgba(124,58,237,0.4)';
-            e.target.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.06)';
+          onFocus={(e) => {
+            e.target.style.borderColor = "rgba(124,58,237,0.4)";
+            e.target.style.boxShadow = "0 0 0 3px rgba(124,58,237,0.06)";
           }}
-          onBlur={e => {
-            e.target.style.borderColor = '#e2e8f0';
-            e.target.style.boxShadow = 'none';
+          onBlur={(e) => {
+            e.target.style.borderColor = "#e2e8f0";
+            e.target.style.boxShadow = "none";
           }}
         />
         <div className="flex gap-2.5 mt-4 justify-end">
-          <button onClick={onCancel} className="btn-ghost px-4 py-2 text-[13px]">
+          <button
+            onClick={onCancel}
+            className="btn-ghost px-4 py-2 text-[13px]"
+          >
             Cancel
           </button>
           <button
-            disabled={!reason.trim()} onClick={() => onConfirm(reason)}
+            disabled={!reason.trim()}
+            onClick={() => onConfirm(reason)}
             className="px-4 py-2 rounded-xl text-[13px] font-bold text-white disabled:opacity-40 transition-opacity hover:opacity-90"
-            style={{ background: '#ef4444' }}
+            style={{ background: "#ef4444" }}
           >
             Confirm Rejection
           </button>
@@ -418,145 +774,210 @@ function RejectModal({ tender, onConfirm, onCancel }: {
 }
 
 /* ── Fetch by T247 ID Panel ─────────────────────────────────── */
-type FetchState = 'idle' | 'fetching' | 'done' | 'error' | 'exists';
+type FetchState = "idle" | "fetching" | "done" | "error" | "exists";
 
 function FetchByIdPanel({ onFetched }: { onFetched: () => void }) {
-  const [open, setOpen]       = useState(false);
-  const [t247Id, setT247Id]   = useState('');
-  const [state, setState]     = useState<FetchState>('idle');
-  const [message, setMessage] = useState('');
+  const [open, setOpen] = useState(false);
+  const [t247Id, setT247Id] = useState("");
+  const [state, setState] = useState<FetchState>("idle");
+  const [message, setMessage] = useState("");
 
   async function handleFetch() {
     const id = t247Id.trim();
     if (!id || !/^\d+$/.test(id)) {
-      setState('error');
-      setMessage('Enter a valid numeric T247 ID, e.g. 98884609');
+      setState("error");
+      setMessage("Enter a valid numeric T247 ID, e.g. 98884609");
       return;
     }
-    setState('fetching');
-    setMessage('');
+    setState("fetching");
+    setMessage("");
     try {
-      const res = await fetch('/api/tenders/fetch-single', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/tenders/fetch-single", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ t247Id: id }),
       });
       const json = await res.json();
-      if (!res.ok) { setState('error'); setMessage(json.error || 'Failed'); return; }
-      setState(json.data.isNew ? 'done' : 'exists');
-      setMessage(json.message || 'Done.');
+      if (!res.ok) {
+        setState("error");
+        setMessage(json.error || "Failed");
+        return;
+      }
+      setState(json.data.isNew ? "done" : "exists");
+      setMessage(json.message || "Done.");
       onFetched();
     } catch (err) {
-      setState('error');
-      setMessage((err as Error).message || 'Network error');
+      setState("error");
+      setMessage((err as Error).message || "Network error");
     }
   }
 
   return (
     <div className="mb-5">
       <button
-        onClick={() => { setOpen(o => !o); setState('idle'); setMessage(''); }}
+        onClick={() => {
+          setOpen((o) => !o);
+          setState("idle");
+          setMessage("");
+        }}
         className="flex items-center gap-2 px-3.5 py-2 rounded-[9px] text-[12.5px] font-semibold transition-all"
         style={{
-          background: open ? 'rgba(245,158,11,0.08)' : 'rgba(245,158,11,0.05)',
-          border: `1px solid ${open ? 'rgba(245,158,11,0.25)' : 'rgba(245,158,11,0.18)'}`,
-          color: '#d97706',
+          background: open ? "rgba(245,158,11,0.08)" : "rgba(245,158,11,0.05)",
+          border: `1px solid ${open ? "rgba(245,158,11,0.25)" : "rgba(245,158,11,0.18)"}`,
+          color: "#d97706",
         }}
-        onMouseEnter={e => {
-          (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,158,11,0.08)';
-          (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(245,158,11,0.25)';
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLButtonElement).style.background =
+            "rgba(245,158,11,0.08)";
+          (e.currentTarget as HTMLButtonElement).style.borderColor =
+            "rgba(245,158,11,0.25)";
         }}
-        onMouseLeave={e => {
+        onMouseLeave={(e) => {
           if (!open) {
-            (e.currentTarget as HTMLButtonElement).style.background = 'rgba(245,158,11,0.05)';
-            (e.currentTarget as HTMLButtonElement).style.borderColor = 'rgba(245,158,11,0.18)';
+            (e.currentTarget as HTMLButtonElement).style.background =
+              "rgba(245,158,11,0.05)";
+            (e.currentTarget as HTMLButtonElement).style.borderColor =
+              "rgba(245,158,11,0.18)";
           }
         }}
       >
         <Hash className="w-3.5 h-3.5" />
         Fetch by T247 ID
-        {open ? <ChevronUp className="w-3.5 h-3.5 ml-0.5" /> : <ChevronDown className="w-3.5 h-3.5 ml-0.5" />}
+        {open ? (
+          <ChevronUp className="w-3.5 h-3.5 ml-0.5" />
+        ) : (
+          <ChevronDown className="w-3.5 h-3.5 ml-0.5" />
+        )}
       </button>
 
       <AnimatePresence>
         {open && (
           <motion.div
             initial={{ opacity: 0, height: 0, marginTop: 0 }}
-            animate={{ opacity: 1, height: 'auto', marginTop: 10 }}
+            animate={{ opacity: 1, height: "auto", marginTop: 10 }}
             exit={{ opacity: 0, height: 0, marginTop: 0 }}
             className="overflow-hidden"
           >
             <div
               className="rounded-2xl p-5"
-              style={{ background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+              }}
             >
-              <p className="text-[12.5px] mb-3.5" style={{ color: '#64748b' }}>
-                Enter a Tender247 numeric ID to fetch, screen and download documents. It appears below for your review.
+              <p className="text-[12.5px] mb-3.5" style={{ color: "#64748b" }}>
+                Enter a Tender247 numeric ID to fetch, screen and download
+                documents. It appears below for your review.
               </p>
               <div className="flex gap-2.5 mb-3">
                 <div className="relative flex-1">
-                  <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'rgba(245,158,11,0.5)' }} />
+                  <Hash
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5"
+                    style={{ color: "rgba(245,158,11,0.5)" }}
+                  />
                   <input
-                    type="text" value={t247Id}
-                    onChange={e => { setT247Id(e.target.value); setState('idle'); setMessage(''); }}
-                    onKeyDown={e => e.key === 'Enter' && state !== 'fetching' && handleFetch()}
+                    type="text"
+                    value={t247Id}
+                    onChange={(e) => {
+                      setT247Id(e.target.value);
+                      setState("idle");
+                      setMessage("");
+                    }}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && state !== "fetching" && handleFetch()
+                    }
                     placeholder="e.g. 98884609"
-                    disabled={state === 'fetching'}
+                    disabled={state === "fetching"}
                     className="w-full pl-9 pr-4 py-2.5 rounded-xl text-[13px] disabled:opacity-50 transition-all"
                     style={{
-                      background: '#f8fafc',
-                      border: '1px solid rgba(245,158,11,0.2)',
-                      color: '#0f172a',
-                      outline: 'none',
+                      background: "#f8fafc",
+                      border: "1px solid rgba(245,158,11,0.2)",
+                      color: "#0f172a",
+                      outline: "none",
                     }}
-                    onFocus={e => {
-                      e.target.style.borderColor = 'rgba(245,158,11,0.5)';
-                      e.target.style.boxShadow = '0 0 0 3px rgba(245,158,11,0.06)';
+                    onFocus={(e) => {
+                      e.target.style.borderColor = "rgba(245,158,11,0.5)";
+                      e.target.style.boxShadow =
+                        "0 0 0 3px rgba(245,158,11,0.06)";
                     }}
-                    onBlur={e => {
-                      e.target.style.borderColor = 'rgba(245,158,11,0.2)';
-                      e.target.style.boxShadow = 'none';
+                    onBlur={(e) => {
+                      e.target.style.borderColor = "rgba(245,158,11,0.2)";
+                      e.target.style.boxShadow = "none";
                     }}
                   />
                 </div>
                 <button
                   onClick={handleFetch}
-                  disabled={state === 'fetching' || !t247Id.trim()}
+                  disabled={state === "fetching" || !t247Id.trim()}
                   className="btn-amber flex-shrink-0"
                 >
-                  {state === 'fetching'
-                    ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Fetching…</>
-                    : <><Zap className="w-3.5 h-3.5" /> Fetch</>}
+                  {state === "fetching" ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Fetching…
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-3.5 h-3.5" /> Fetch
+                    </>
+                  )}
                 </button>
               </div>
 
-              {state === 'fetching' && (
-                <div className="rounded-xl px-4 py-3 text-[12.5px]"
-                  style={{ background: 'rgba(245,158,11,0.05)', border: '1px solid rgba(245,158,11,0.15)' }}>
-                  <div className="flex items-center gap-2 mb-1" style={{ color: '#d97706' }}>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Logging in, scraping tender, downloading documents…
-                  </div>
-                  <p style={{ color: 'rgba(217,119,6,0.6)' }}>Takes ~30–60 seconds. Please wait.</p>
-                </div>
-              )}
-
-              {(state === 'done' || state === 'exists') && (
-                <div className="rounded-xl px-4 py-2.5 flex items-center gap-2 text-[12.5px]"
+              {state === "fetching" && (
+                <div
+                  className="rounded-xl px-4 py-3 text-[12.5px]"
                   style={{
-                    background: state === 'exists' ? 'rgba(56,189,248,0.05)' : 'rgba(34,197,94,0.05)',
-                    border: `1px solid ${state === 'exists' ? 'rgba(56,189,248,0.18)' : 'rgba(34,197,94,0.18)'}`,
-                    color: state === 'exists' ? '#0284c7' : '#16a34a',
-                  }}>
-                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> {message}
-                  {state === 'done' && <span style={{ color: '#94a3b8' }}>· Scroll down to find it.</span>}
+                    background: "rgba(245,158,11,0.05)",
+                    border: "1px solid rgba(245,158,11,0.15)",
+                  }}
+                >
+                  <div
+                    className="flex items-center gap-2 mb-1"
+                    style={{ color: "#d97706" }}
+                  >
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Logging in, fetching tender, downloading documents…
+                  </div>
+                  <p style={{ color: "rgba(217,119,6,0.6)" }}>
+                    Takes ~30–60 seconds. Please wait.
+                  </p>
                 </div>
               )}
 
-              {state === 'error' && (
-                <div className="rounded-xl px-4 py-2.5 flex items-center gap-2 text-[12.5px]"
-                  style={{ background: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.18)', color: '#dc2626' }}>
-                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {message}
+              {(state === "done" || state === "exists") && (
+                <div
+                  className="rounded-xl px-4 py-2.5 flex items-center gap-2 text-[12.5px]"
+                  style={{
+                    background:
+                      state === "exists"
+                        ? "rgba(56,189,248,0.05)"
+                        : "rgba(34,197,94,0.05)",
+                    border: `1px solid ${state === "exists" ? "rgba(56,189,248,0.18)" : "rgba(34,197,94,0.18)"}`,
+                    color: state === "exists" ? "#0284c7" : "#16a34a",
+                  }}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />{" "}
+                  {message}
+                  {state === "done" && (
+                    <span style={{ color: "#94a3b8" }}>
+                      · Scroll down to find it.
+                    </span>
+                  )}
+                </div>
+              )}
+
+              {state === "error" && (
+                <div
+                  className="rounded-xl px-4 py-2.5 flex items-center gap-2 text-[12.5px]"
+                  style={{
+                    background: "rgba(239,68,68,0.05)",
+                    border: "1px solid rgba(239,68,68,0.18)",
+                    color: "#dc2626",
+                  }}
+                >
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />{" "}
+                  {message}
                 </div>
               )}
             </div>
@@ -569,41 +990,73 @@ function FetchByIdPanel({ onFetched }: { onFetched: () => void }) {
 
 /* ── Filter select style ───────────────────────────────────── */
 const selStyle: React.CSSProperties = {
-  background: '#ffffff',
-  border: '1px solid #e2e8f0',
-  color: '#475569',
-  borderRadius: '9px',
-  fontSize: '12.5px',
-  padding: '8px 12px',
-  outline: 'none',
-  cursor: 'pointer',
-  transition: 'border-color 0.15s',
+  background: "#ffffff",
+  border: "1px solid #e2e8f0",
+  color: "#475569",
+  borderRadius: "9px",
+  fontSize: "12.5px",
+  padding: "8px 12px",
+  outline: "none",
+  cursor: "pointer",
+  transition: "border-color 0.15s",
 };
 
-const SESSION_OPTIONS = ['all', 'morning', 'afternoon', 'live', 'manual'];
+const SESSION_OPTIONS = ["all", "morning", "afternoon", "live", "manual"];
 const DECISION_OPTIONS = [
-  { value: 'all',      label: 'All Decisions' },
-  { value: 'pending',  label: 'Pending Review' },
-  { value: 'accepted', label: 'Accepted' },
-  { value: 'rejected', label: 'Rejected' },
+  { value: "all", label: "All Decisions" },
+  { value: "pending", label: "Pending Review" },
+  { value: "accepted", label: "Accepted" },
+  { value: "rejected", label: "Rejected" },
 ];
 
 /* ── Status tab bar ────────────────────────────────────────── */
-type TenderStats = { qualified: number; autoRejected: number; pendingReview: number; accepted: number; manualRejected: number };
+type TenderStats = {
+  qualified: number;
+  autoRejected: number;
+  pendingReview: number;
+  accepted: number;
+  manualRejected: number;
+};
 
-const STATUS_TABS: { value: string; label: string; statKey?: keyof TenderStats; color: string; activeColor: string }[] = [
-  { value: 'all',       label: 'All',           color: '#64748b', activeColor: '#0f172a' },
-  { value: 'qualified', label: 'Qualified',      statKey: 'qualified',    color: '#7c3aed', activeColor: '#7c3aed' },
-  { value: 'rejected',  label: 'Auto-Rejected',  statKey: 'autoRejected', color: '#dc2626', activeColor: '#dc2626' },
+const STATUS_TABS: {
+  value: string;
+  label: string;
+  statKey?: keyof TenderStats;
+  color: string;
+  activeColor: string;
+}[] = [
+  { value: "all", label: "All", color: "#64748b", activeColor: "#0f172a" },
+  {
+    value: "qualified",
+    label: "Qualified",
+    statKey: "qualified",
+    color: "#7c3aed",
+    activeColor: "#7c3aed",
+  },
+  {
+    value: "rejected",
+    label: "Auto-Rejected",
+    statKey: "autoRejected",
+    color: "#dc2626",
+    activeColor: "#dc2626",
+  },
 ];
 
 function StatusTabBar({
-  active, stats, onChange,
-}: { active: string; stats: TenderStats | null; onChange: (v: string) => void }) {
+  active,
+  stats,
+  onChange,
+}: {
+  active: string;
+  stats: TenderStats | null;
+  onChange: (v: string) => void;
+}) {
   return (
-    <div className="flex items-center gap-1 rounded-xl p-1"
-      style={{ background: '#f1f5f9', border: '1px solid #e2e8f0' }}>
-      {STATUS_TABS.map(tab => {
+    <div
+      className="flex items-center gap-1 rounded-xl p-1"
+      style={{ background: "#f1f5f9", border: "1px solid #e2e8f0" }}
+    >
+      {STATUS_TABS.map((tab) => {
         const count = tab.statKey ? stats?.[tab.statKey] : null;
         const isActive = active === tab.value;
         return (
@@ -612,10 +1065,12 @@ function StatusTabBar({
             onClick={() => onChange(tab.value)}
             className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-all"
             style={{
-              background: isActive ? '#ffffff' : 'transparent',
-              color: isActive ? tab.activeColor : '#64748b',
-              boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              border: isActive ? `1px solid ${tab.activeColor}22` : '1px solid transparent',
+              background: isActive ? "#ffffff" : "transparent",
+              color: isActive ? tab.activeColor : "#64748b",
+              boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+              border: isActive
+                ? `1px solid ${tab.activeColor}22`
+                : "1px solid transparent",
             }}
           >
             {tab.label}
@@ -623,8 +1078,10 @@ function StatusTabBar({
               <span
                 className="text-[11px] font-bold px-1.5 py-0.5 rounded-md min-w-[20px] text-center"
                 style={{
-                  background: isActive ? `${tab.activeColor}12` : 'rgba(100,116,139,0.1)',
-                  color: isActive ? tab.activeColor : '#94a3b8',
+                  background: isActive
+                    ? `${tab.activeColor}12`
+                    : "rgba(100,116,139,0.1)",
+                  color: isActive ? tab.activeColor : "#94a3b8",
                 }}
               >
                 {count}
@@ -640,81 +1097,132 @@ function StatusTabBar({
 /* ── Main Content ──────────────────────────────────────────── */
 function TendersContent() {
   const searchParams = useSearchParams();
-  const [data, setData]             = useState<PaginatedResponse<Tender> | null>(null);
-  const [loading, setLoading]       = useState(true);
-  const [search, setSearch]         = useState('');
-  const [l1Status, setL1Status]     = useState(searchParams.get('l1Status') || 'qualified');
-  const [l1Decision, setL1Decision] = useState(searchParams.get('l1Decision') || 'all');
-  const [session, setSession]       = useState('all');
-  const [page, setPage]             = useState(1);
+  const [data, setData] = useState<PaginatedResponse<Tender> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [l1Status, setL1Status] = useState(
+    searchParams.get("l1Status") || "qualified",
+  );
+  const [l1Decision, setL1Decision] = useState(
+    searchParams.get("l1Decision") || "all",
+  );
+  const [session, setSession] = useState("all");
+  const [page, setPage] = useState(1);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [previewTender, setPreviewTender] = useState<Tender | null>(null);
-  const [rejectTender, setRejectTender]   = useState<Tender | null>(null);
-  const [stats, setStats]           = useState<TenderStats | null>(null);
+  const [rejectTender, setRejectTender] = useState<Tender | null>(null);
+  const [stats, setStats] = useState<TenderStats | null>(null);
 
   useEffect(() => {
-    fetch('/api/tenders/stats').then(r => r.json()).then(j => { if (j.data) setStats(j.data); });
+    fetch("/api/tenders/stats")
+      .then((r) => r.json())
+      .then((j) => {
+        if (j.data) setStats(j.data);
+      });
   }, []);
 
   const fetchTenders = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ page: String(page), pageSize: '25' });
-      if (l1Status !== 'all')   p.set('l1Status', l1Status);
-      if (l1Decision !== 'all') p.set('l1Decision', l1Decision);
-      if (session !== 'all')    p.set('session', session);
-      if (search)               p.set('search', search);
+      const p = new URLSearchParams({ page: String(page), pageSize: "25" });
+      if (l1Status !== "all") p.set("l1Status", l1Status);
+      if (l1Decision !== "all") p.set("l1Decision", l1Decision);
+      if (session !== "all") p.set("session", session);
+      if (search) p.set("search", search);
       const res = await fetch(`/api/tenders?${p}`);
       const json = await res.json();
       setData(json.data);
-    } catch { /* ignore */ }
-    finally { setLoading(false); }
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(false);
+    }
   }, [page, l1Status, l1Decision, session, search]);
 
-  useEffect(() => { fetchTenders(); }, [fetchTenders]);
+  useEffect(() => {
+    fetchTenders();
+  }, [fetchTenders]);
 
-  async function updateDecision(id: number, decision: 'accepted' | 'rejected' | 'pending', reason?: string) {
+  async function updateDecision(
+    id: number,
+    decision: "accepted" | "rejected" | "pending",
+    reason?: string,
+  ) {
     setUpdatingId(id);
     try {
       await fetch(`/api/tenders/${id}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ l1Decision: decision, l1DecisionReason: reason }),
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          l1Decision: decision,
+          l1DecisionReason: reason,
+        }),
       });
       await fetchTenders();
       // Refresh stats badge counts after each decision
-      fetch('/api/tenders/stats').then(r => r.json()).then(j => { if (j.data) setStats(j.data); });
+      fetch("/api/tenders/stats")
+        .then((r) => r.json())
+        .then((j) => {
+          if (j.data) setStats(j.data);
+        });
       if (previewTender?.id === id)
-        setPreviewTender(prev => prev ? { ...prev, l1Decision: decision, l1DecisionReason: reason || null } : null);
-    } finally { setUpdatingId(null); setRejectTender(null); }
+        setPreviewTender((prev) =>
+          prev
+            ? {
+                ...prev,
+                l1Decision: decision,
+                l1DecisionReason: reason || null,
+              }
+            : null,
+        );
+    } finally {
+      setUpdatingId(null);
+      setRejectTender(null);
+    }
   }
 
-  const pendingCount = data?.data.filter(t => t.l1Decision === 'pending' && t.l1Status === 'qualified').length ?? 0;
+  const pendingCount =
+    data?.data.filter(
+      (t) => t.l1Decision === "pending" && t.l1Status === "qualified",
+    ).length ?? 0;
 
   return (
     <div className="p-8 max-w-full">
-
       {/* ── Header ─────────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
         className="mb-6"
       >
         <div className="flex items-start justify-between mb-4">
           <div>
-            <h1 className="text-[26px] font-bold tracking-tight" style={{ color: '#0f172a' }}>
+            <h1
+              className="text-[26px] font-bold tracking-tight"
+              style={{ color: "#0f172a" }}
+            >
               Tender Screening
             </h1>
-            <p className="text-[13.5px] mt-1" style={{ color: '#64748b' }}>
-              Level 1 · Click a row to preview and make your Accept / Reject decision
+            <p className="text-[13.5px] mt-1" style={{ color: "#64748b" }}>
+              Level 1 · Click a row to preview and make your Accept / Reject
+              decision
             </p>
           </div>
           {pendingCount > 0 && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
               className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-bold"
-              style={{ background: 'rgba(245,158,11,0.07)', border: '1px solid rgba(245,158,11,0.2)', color: '#d97706' }}
+              style={{
+                background: "rgba(245,158,11,0.07)",
+                border: "1px solid rgba(245,158,11,0.2)",
+                color: "#d97706",
+              }}
             >
-              <span className="w-1.5 h-1.5 rounded-full pulse-dot" style={{ background: '#f59e0b' }} />
+              <span
+                className="w-1.5 h-1.5 rounded-full pulse-dot"
+                style={{ background: "#f59e0b" }}
+              />
               {pendingCount} pending review
             </motion.div>
           )}
@@ -723,20 +1231,31 @@ function TendersContent() {
         {/* Workflow strip */}
         <div
           className="rounded-xl px-4 py-3 flex items-center gap-2 flex-wrap"
-          style={{ background: '#ffffff', border: '1px solid #e2e8f0' }}
+          style={{ background: "#ffffff", border: "1px solid #e2e8f0" }}
         >
           {[
-            { icon: Filter,       label: 'BRD Auto-Screen',  color: '#7c3aed' },
-            { icon: CheckCircle2, label: 'Accept / Reject',   color: '#f59e0b' },
-            { icon: Microscope,   label: 'L2 AI Analysis',    color: '#7c3aed' },
-            { icon: FileText,     label: 'BID / NO-BID',      color: '#22c55e' },
+            { icon: Filter, label: "BRD Auto-Screen", color: "#7c3aed" },
+            { icon: CheckCircle2, label: "Accept / Reject", color: "#f59e0b" },
+            { icon: Microscope, label: "L2 AI Analysis", color: "#7c3aed" },
+            { icon: FileText, label: "BID / NO-BID", color: "#22c55e" },
           ].map(({ icon: Icon, label, color }, i, arr) => (
             <div key={label} className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
-                style={{ background: `${color}0e`, color, border: `1px solid ${color}25` }}>
+              <div
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+                style={{
+                  background: `${color}0e`,
+                  color,
+                  border: `1px solid ${color}25`,
+                }}
+              >
                 <Icon className="w-3 h-3" /> {label}
               </div>
-              {i < arr.length - 1 && <ArrowRight className="w-3 h-3 flex-shrink-0" style={{ color: '#cbd5e1' }} />}
+              {i < arr.length - 1 && (
+                <ArrowRight
+                  className="w-3 h-3 flex-shrink-0"
+                  style={{ color: "#cbd5e1" }}
+                />
+              )}
             </div>
           ))}
         </div>
@@ -747,17 +1266,29 @@ function TendersContent() {
 
       {/* ── Status Tabs ─────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.08 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.08 }}
         className="flex items-center gap-3 mb-3 flex-wrap"
       >
         <StatusTabBar
           active={l1Status}
           stats={stats}
-          onChange={v => { setL1Status(v); setL1Decision('all'); setPage(1); }}
+          onChange={(v) => {
+            setL1Status(v);
+            setL1Decision("all");
+            setPage(1);
+          }}
         />
-        {l1Status === 'rejected' && (
-          <span className="text-[12px] font-medium px-3 py-1.5 rounded-lg"
-            style={{ background: 'rgba(220,38,38,0.06)', border: '1px solid rgba(220,38,38,0.15)', color: '#dc2626' }}>
+        {l1Status === "rejected" && (
+          <span
+            className="text-[12px] font-medium px-3 py-1.5 rounded-lg"
+            style={{
+              background: "rgba(220,38,38,0.06)",
+              border: "1px solid rgba(220,38,38,0.15)",
+              color: "#dc2626",
+            }}
+          >
             Showing auto-rejected tenders — excluded by keyword or AI screening
           </span>
         )}
@@ -765,52 +1296,100 @@ function TendersContent() {
 
       {/* ── Filters ─────────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.1 }}
         className="rounded-xl p-3.5 mb-4 flex flex-wrap gap-2.5 items-center"
-        style={{ background: '#ffffff', border: '1px solid #e2e8f0' }}
+        style={{ background: "#ffffff", border: "1px solid #e2e8f0" }}
       >
-        <SlidersHorizontal className="w-4 h-4 flex-shrink-0" style={{ color: '#94a3b8' }} />
+        <SlidersHorizontal
+          className="w-4 h-4 flex-shrink-0"
+          style={{ color: "#94a3b8" }}
+        />
 
         {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: '#94a3b8' }} />
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4"
+            style={{ color: "#94a3b8" }}
+          />
           <input
             className="w-full pl-9 pr-4 py-2 rounded-lg text-[13px] transition-all"
             style={{
-              background: '#f8fafc',
-              border: '1px solid #e2e8f0',
-              color: '#0f172a',
-              outline: 'none',
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              color: "#0f172a",
+              outline: "none",
             }}
             placeholder="Search tenders, issuers, IDs…"
             value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1); }}
-            onFocus={e => { e.target.style.borderColor = 'rgba(124,58,237,0.35)'; e.target.style.boxShadow = '0 0 0 3px rgba(124,58,237,0.05)'; }}
-            onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "rgba(124,58,237,0.35)";
+              e.target.style.boxShadow = "0 0 0 3px rgba(124,58,237,0.05)";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#e2e8f0";
+              e.target.style.boxShadow = "none";
+            }}
           />
         </div>
 
         {/* Only show decision filter for qualified tenders */}
-        {l1Status !== 'rejected' && (
-          <select value={l1Decision} onChange={e => { setL1Decision(e.target.value); setPage(1); }} style={selStyle}
-            onFocus={e => (e.target.style.borderColor = 'rgba(124,58,237,0.35)')}
-            onBlur={e => (e.target.style.borderColor = '#e2e8f0')}>
-            {DECISION_OPTIONS.map(o => <option key={o.value} value={o.value} style={{ background: '#ffffff' }}>{o.label}</option>)}
+        {l1Status !== "rejected" && (
+          <select
+            value={l1Decision}
+            onChange={(e) => {
+              setL1Decision(e.target.value);
+              setPage(1);
+            }}
+            style={selStyle}
+            onFocus={(e) =>
+              (e.target.style.borderColor = "rgba(124,58,237,0.35)")
+            }
+            onBlur={(e) => (e.target.style.borderColor = "#e2e8f0")}
+          >
+            {DECISION_OPTIONS.map((o) => (
+              <option
+                key={o.value}
+                value={o.value}
+                style={{ background: "#ffffff" }}
+              >
+                {o.label}
+              </option>
+            ))}
           </select>
         )}
 
-        <select value={session} onChange={e => { setSession(e.target.value); setPage(1); }} style={selStyle}
-          onFocus={e => (e.target.style.borderColor = 'rgba(124,58,237,0.35)')}
-          onBlur={e => (e.target.style.borderColor = '#e2e8f0')}>
-          {SESSION_OPTIONS.map(s => (
-            <option key={s} value={s} style={{ background: '#ffffff' }}>
-              {s === 'all' ? 'All Sessions' : s.charAt(0).toUpperCase() + s.slice(1)}
+        <select
+          value={session}
+          onChange={(e) => {
+            setSession(e.target.value);
+            setPage(1);
+          }}
+          style={selStyle}
+          onFocus={(e) =>
+            (e.target.style.borderColor = "rgba(124,58,237,0.35)")
+          }
+          onBlur={(e) => (e.target.style.borderColor = "#e2e8f0")}
+        >
+          {SESSION_OPTIONS.map((s) => (
+            <option key={s} value={s} style={{ background: "#ffffff" }}>
+              {s === "all"
+                ? "All Sessions"
+                : s.charAt(0).toUpperCase() + s.slice(1)}
             </option>
           ))}
         </select>
 
         {data && (
-          <span className="ml-auto text-[12px] font-medium" style={{ color: '#94a3b8' }}>
+          <span
+            className="ml-auto text-[12px] font-medium"
+            style={{ color: "#94a3b8" }}
+          >
             {data.total.toLocaleString()} tenders
           </span>
         )}
@@ -818,9 +1397,15 @@ function TendersContent() {
 
       {/* ── Table ───────────────────────────────────────────── */}
       <motion.div
-        initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15 }}
         className="rounded-2xl overflow-hidden"
-        style={{ background: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+        style={{
+          background: "#ffffff",
+          border: "1px solid #e2e8f0",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+        }}
       >
         {loading ? (
           <div className="p-8">
@@ -837,19 +1422,38 @@ function TendersContent() {
           </div>
         ) : data?.data.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <div className="w-12 h-12 rounded-2xl flex items-center justify-center"
-              style={{ background: 'rgba(124,58,237,0.05)', border: '1px solid rgba(124,58,237,0.12)' }}>
-              <Filter className="w-5 h-5" style={{ color: 'rgba(124,58,237,0.4)' }} />
+            <div
+              className="w-12 h-12 rounded-2xl flex items-center justify-center"
+              style={{
+                background: "rgba(124,58,237,0.05)",
+                border: "1px solid rgba(124,58,237,0.12)",
+              }}
+            >
+              <Filter
+                className="w-5 h-5"
+                style={{ color: "rgba(124,58,237,0.4)" }}
+              />
             </div>
-            <p className="text-[14px] font-medium" style={{ color: '#64748b' }}>No tenders match your filters</p>
-            <p className="text-[12.5px]" style={{ color: '#94a3b8' }}>Try adjusting the filters above</p>
+            <p className="text-[14px] font-medium" style={{ color: "#64748b" }}>
+              No tenders match your filters
+            </p>
+            <p className="text-[12.5px]" style={{ color: "#94a3b8" }}>
+              Try adjusting the filters above
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="data-table">
               <thead>
                 <tr>
-                  {['Tender', 'Issuing Authority', 'Value', 'Due Date', 'Status', 'Decision'].map(h => (
+                  {[
+                    "Tender",
+                    "Issuing Authority",
+                    "Value",
+                    "Due Date",
+                    "Status",
+                    "Decision",
+                  ].map((h) => (
                     <th key={h}>{h}</th>
                   ))}
                 </tr>
@@ -865,79 +1469,151 @@ function TendersContent() {
                       initial={{ opacity: 0, y: 4 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: rowIdx * 0.018, duration: 0.25 }}
-                      onClick={() => setPreviewTender(isSelected ? null : tender)}
-                      className={isSelected ? 'row-selected' : ''}
-                      style={{ opacity: tender.l1Decision === 'rejected' ? 0.55 : 1 }}
+                      onClick={() =>
+                        setPreviewTender(isSelected ? null : tender)
+                      }
+                      className={isSelected ? "row-selected" : ""}
+                      style={{
+                        opacity: tender.l1Decision === "rejected" ? 0.55 : 1,
+                      }}
                     >
                       <td className="max-w-[360px]">
-                        <p className="font-semibold leading-snug line-clamp-2 capitalize mb-1 text-[13.5px]"
-                          style={{ color: '#0f172a' }}>
+                        <p
+                          className="font-semibold leading-snug line-clamp-2 capitalize mb-1 text-[13.5px]"
+                          style={{ color: "#0f172a" }}
+                        >
                           {tender.title}
                         </p>
                         {(tender.issuedBy || tender.location) && (
-                          <p className="text-[11px] mb-1.5 truncate flex items-center gap-1" style={{ color: '#64748b' }}>
-                            {tender.issuedBy && <span className="truncate">{tender.issuedBy}</span>}
-                            {tender.issuedBy && tender.location && <span style={{ color: '#cbd5e1' }}>·</span>}
-                            {tender.location && <span className="truncate">{tender.location}</span>}
+                          <p
+                            className="text-[11px] mb-1.5 truncate flex items-center gap-1"
+                            style={{ color: "#64748b" }}
+                          >
+                            {tender.issuedBy && (
+                              <span className="truncate">
+                                {tender.issuedBy}
+                              </span>
+                            )}
+                            {tender.issuedBy && tender.location && (
+                              <span style={{ color: "#cbd5e1" }}>·</span>
+                            )}
+                            {tender.location && (
+                              <span className="truncate">
+                                {tender.location}
+                              </span>
+                            )}
                           </p>
                         )}
                         <div className="flex flex-wrap gap-1">
-                          {tender.l1QualificationReasons?.slice(0, 2).map((r, i) => (
-                            <span key={i} className="text-[10.5px] px-1.5 py-0.5 rounded-md"
-                              style={{ background: 'rgba(124,58,237,0.07)', color: '#7c3aed', border: '1px solid rgba(124,58,237,0.15)' }}>
-                              {r.length > 30 ? r.slice(0, 30) + '…' : r}
-                            </span>
-                          ))}
-                          {tender.l1Status === 'rejected' && tender.l1ExclusionReason && (
-                            <span className="text-[10.5px] px-1.5 py-0.5 rounded-md"
-                              style={{ background: 'rgba(239,68,68,0.06)', color: '#dc2626', border: '1px solid rgba(239,68,68,0.14)' }}>
-                              {tender.l1ExclusionReason.slice(0, 40)}…
-                            </span>
-                          )}
-                          {tender.l1Decision === 'accepted' && (
-                            <span className="text-[10.5px] px-1.5 py-0.5 rounded-md flex items-center gap-1"
-                              style={{ background: 'rgba(124,58,237,0.07)', color: '#7c3aed', border: '1px solid rgba(124,58,237,0.15)' }}>
+                          {tender.l1QualificationReasons
+                            ?.slice(0, 2)
+                            .map((r, i) => (
+                              <span
+                                key={i}
+                                className="text-[10.5px] px-1.5 py-0.5 rounded-md"
+                                style={{
+                                  background: "rgba(124,58,237,0.07)",
+                                  color: "#7c3aed",
+                                  border: "1px solid rgba(124,58,237,0.15)",
+                                }}
+                              >
+                                {r.length > 30 ? r.slice(0, 30) + "…" : r}
+                              </span>
+                            ))}
+                          {tender.l1Status === "rejected" &&
+                            tender.l1ExclusionReason && (
+                              <span
+                                className="text-[10.5px] px-1.5 py-0.5 rounded-md"
+                                style={{
+                                  background: "rgba(239,68,68,0.06)",
+                                  color: "#dc2626",
+                                  border: "1px solid rgba(239,68,68,0.14)",
+                                }}
+                              >
+                                {tender.l1ExclusionReason.slice(0, 40)}…
+                              </span>
+                            )}
+                          {tender.l1Decision === "accepted" && (
+                            <span
+                              className="text-[10.5px] px-1.5 py-0.5 rounded-md flex items-center gap-1"
+                              style={{
+                                background: "rgba(124,58,237,0.07)",
+                                color: "#7c3aed",
+                                border: "1px solid rgba(124,58,237,0.15)",
+                              }}
+                            >
                               <Microscope className="w-2.5 h-2.5" />
-                              {tender.l2Analyzed ? 'L2 done' : 'L2 pending'}
+                              {tender.l2Analyzed ? "L2 done" : "L2 pending"}
                             </span>
                           )}
                         </div>
                       </td>
 
                       <td>
-                        <p className="font-medium text-[13px]" style={{ color: '#334155' }}>
+                        <p
+                          className="font-medium text-[13px]"
+                          style={{ color: "#334155" }}
+                        >
                           {tender.issuedBy}
                         </p>
                         {tender.location && (
-                          <p className="text-[11.5px] mt-0.5 flex items-center gap-1" style={{ color: '#94a3b8' }}>
+                          <p
+                            className="text-[11.5px] mt-0.5 flex items-center gap-1"
+                            style={{ color: "#94a3b8" }}
+                          >
                             <MapPin className="w-3 h-3" /> {tender.location}
                           </p>
                         )}
                       </td>
 
-                      <td className="whitespace-nowrap font-semibold text-[13px]" style={{ color: '#0f172a' }}>
-                        {tender.estimatedValue
-                          ? formatCurrency(tender.estimatedValue)
-                          : <span style={{ color: '#94a3b8', fontSize: 12 }}>{tender.estimatedValueRaw || '—'}</span>}
-                      </td>
-
-                      <td>
-                        <span className="font-semibold whitespace-nowrap text-[13px]" style={{ color: dateColor }}>
-                          {formatDate(tender.dueDate)}
-                        </span>
-                        {days !== null && days >= 0 && (
-                          <p className="text-[11px] mt-0.5" style={{ color: '#94a3b8' }}>{days}d left</p>
+                      <td
+                        className="whitespace-nowrap font-semibold text-[13px]"
+                        style={{ color: "#0f172a" }}
+                      >
+                        {tender.estimatedValue ? (
+                          formatCurrency(tender.estimatedValue)
+                        ) : (
+                          <span style={{ color: "#94a3b8", fontSize: 12 }}>
+                            {tender.estimatedValueRaw || "—"}
+                          </span>
                         )}
                       </td>
 
-                      <td><L1Badge status={tender.l1Status} /></td>
+                      <td>
+                        <span
+                          className="font-semibold whitespace-nowrap text-[13px]"
+                          style={{ color: dateColor }}
+                        >
+                          {formatDate(tender.dueDate)}
+                        </span>
+                        {days !== null && days >= 0 && (
+                          <p
+                            className="text-[11px] mt-0.5"
+                            style={{ color: "#94a3b8" }}
+                          >
+                            {days}d left
+                          </p>
+                        )}
+                      </td>
+
+                      <td>
+                        <L1Badge status={tender.l1Status} />
+                      </td>
 
                       <td>
                         <div className="flex items-center gap-2">
                           <DecisionBadge d={tender.l1Decision} />
-                          {isSelected
-                            ? <ChevronUp className="w-3.5 h-3.5" style={{ color: '#7c3aed' }} />
-                            : <ChevronDown className="w-3.5 h-3.5" style={{ color: '#cbd5e1' }} />}
+                          {isSelected ? (
+                            <ChevronUp
+                              className="w-3.5 h-3.5"
+                              style={{ color: "#7c3aed" }}
+                            />
+                          ) : (
+                            <ChevronDown
+                              className="w-3.5 h-3.5"
+                              style={{ color: "#cbd5e1" }}
+                            />
+                          )}
                         </div>
                       </td>
                     </motion.tr>
@@ -952,24 +1628,45 @@ function TendersContent() {
         {data && data.totalPages > 1 && (
           <div
             className="flex items-center justify-between px-6 py-3.5"
-            style={{ borderTop: '1px solid #e2e8f0' }}
+            style={{ borderTop: "1px solid #e2e8f0" }}
           >
-            <p className="text-[12.5px]" style={{ color: '#94a3b8' }}>
-              Page {data.page} of {data.totalPages} · {data.total.toLocaleString()} total
+            <p className="text-[12.5px]" style={{ color: "#94a3b8" }}>
+              Page {data.page} of {data.totalPages} ·{" "}
+              {data.total.toLocaleString()} total
             </p>
             <div className="flex gap-2">
               {[
-                { disabled: page === 1,               action: () => setPage(p => p - 1), icon: ChevronLeft },
-                { disabled: page === data.totalPages,  action: () => setPage(p => p + 1), icon: ChevronRight },
+                {
+                  disabled: page === 1,
+                  action: () => setPage((p) => p - 1),
+                  icon: ChevronLeft,
+                },
+                {
+                  disabled: page === data.totalPages,
+                  action: () => setPage((p) => p + 1),
+                  icon: ChevronRight,
+                },
               ].map(({ disabled, action, icon: Icon }, i) => (
-                <button key={i} disabled={disabled}
-                  onClick={e => { e.stopPropagation(); action(); }}
+                <button
+                  key={i}
+                  disabled={disabled}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    action();
+                  }}
                   className="w-8 h-8 rounded-lg flex items-center justify-center disabled:opacity-30 transition-colors"
-                  style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
-                  onMouseEnter={e => { if (!disabled) (e.currentTarget as HTMLElement).style.background = '#f1f5f9'; }}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = '#f8fafc'}
+                  style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}
+                  onMouseEnter={(e) => {
+                    if (!disabled)
+                      (e.currentTarget as HTMLElement).style.background =
+                        "#f1f5f9";
+                  }}
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLElement).style.background =
+                      "#f8fafc")
+                  }
                 >
-                  <Icon className="w-4 h-4" style={{ color: '#7c3aed' }} />
+                  <Icon className="w-4 h-4" style={{ color: "#7c3aed" }} />
                 </button>
               ))}
             </div>
@@ -983,9 +1680,24 @@ function TendersContent() {
           <PreviewPanel
             tender={previewTender}
             onClose={() => setPreviewTender(null)}
-            onAccept={() => updateDecision(previewTender.id, 'accepted')}
+            onAccept={() => updateDecision(previewTender.id, "accepted")}
             onReject={() => setRejectTender(previewTender)}
             updating={updatingId === previewTender.id}
+            onOverviewRefresh={(tenderId, newOverview) => {
+              setPreviewTender((prev) =>
+                prev?.id === tenderId ? { ...prev, tenderOverview: newOverview } : prev
+              );
+              setData((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      data: prev.data.map((t) =>
+                        t.id === tenderId ? { ...t, tenderOverview: newOverview } : t
+                      ),
+                    }
+                  : prev
+              );
+            }}
           />
         )}
       </AnimatePresence>
@@ -993,7 +1705,9 @@ function TendersContent() {
         {rejectTender && (
           <RejectModal
             tender={rejectTender}
-            onConfirm={reason => updateDecision(rejectTender.id, 'rejected', reason)}
+            onConfirm={(reason) =>
+              updateDecision(rejectTender.id, "rejected", reason)
+            }
             onCancel={() => setRejectTender(null)}
           />
         )}
@@ -1004,11 +1718,15 @@ function TendersContent() {
 
 export default function TendersPage() {
   return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-full">
-        <p className="text-[13px]" style={{ color: '#94a3b8' }}>Loading…</p>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center h-full">
+          <p className="text-[13px]" style={{ color: "#94a3b8" }}>
+            Loading…
+          </p>
+        </div>
+      }
+    >
       <TendersContent />
     </Suspense>
   );

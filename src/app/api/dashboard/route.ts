@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { query } from '@/lib/db';
-import type { ApiResponse, ScrapeRun } from '@/types';
+import type { ApiResponse, FetchRun } from '@/types';
 
 export interface DashboardStats {
   totalTenders: number;
@@ -13,7 +13,7 @@ export interface DashboardStats {
   rejectedL1: number;
   l2Analyzed: number;
   todayFound: number;
-  recentRuns: ScrapeRun[];
+  recentRuns: FetchRun[];
 }
 
 export async function GET() {
@@ -44,15 +44,15 @@ export async function GET() {
       FROM tenders
     `);
 
-    // Recent scrape runs (limit 6 for dashboard widget + 10 for chart)
+    // Recent fetch runs (limit 6 for dashboard widget + 10 for chart)
     const runs = await query<Record<string, unknown>>(
       'SELECT * FROM scrape_runs ORDER BY started_at DESC LIMIT 10'
     );
 
-    const recentRuns: ScrapeRun[] = runs.map(r => ({
+    const recentRuns: FetchRun[] = runs.map(r => ({
       id: r.id as number,
-      session: r.session as ScrapeRun['session'],
-      status: r.status as ScrapeRun['status'],
+      session: r.session as FetchRun['session'],
+      status: r.status as FetchRun['status'],
       totalFound: r.total_found as number,
       totalQualified: r.total_qualified as number,
       totalRejected: r.total_rejected as number,

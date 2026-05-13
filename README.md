@@ -1,6 +1,6 @@
 # GWS Tender Trakr
 
-Internal AI-powered tender intelligence platform for Glasswing Solutions. Automatically scrapes Tender247, screens tenders against GWS business criteria (L1), and generates deep-dive AI analysis reports (L2) using Google Gemini.
+Internal AI-powered tender intelligence platform for Glasswing. Automatically collects tenders from Tender247, screens against GWS business criteria (L1), and generates deep-dive AI analysis reports (L2) using Google Gemini.
 
 ---
 
@@ -11,7 +11,7 @@ Internal AI-powered tender intelligence platform for Glasswing Solutions. Automa
 | Framework | Next.js 15 (App Router) |
 | Database | MySQL 8 |
 | AI | Google Gemini (via Genkit) |
-| Scraping | Puppeteer |
+| Collection | Puppeteer |
 | Auth | NextAuth.js |
 | UI | Tailwind CSS + Framer Motion |
 
@@ -22,7 +22,7 @@ Internal AI-powered tender intelligence platform for Glasswing Solutions. Automa
 - **L1 Auto-Screening** — keyword/value rules filter hundreds of tenders down to relevant ones
 - **L2 AI Analysis** — Gemini reads tender documents and produces scope, PQC, risk, BID/NO-BID reports
 - **Manual Review Queue** — Accept / Reject qualified tenders with reason tracking
-- **Scrape Scheduler** — Cron-based morning / afternoon scraping sessions
+- **Fetch Scheduler** — Cron-based morning / afternoon fetch sessions
 - **Settings UI** — Edit keywords, credentials and thresholds without code changes
 
 ---
@@ -65,7 +65,7 @@ npm run db:migrate
 # Next.js web app
 npm run dev
 
-# Scraping server (separate terminal)
+# Fetching server (separate terminal)
 npm run dev:scraper
 ```
 
@@ -80,15 +80,15 @@ npm run build
 npm start
 ```
 
-### Scraping server
+### Fetching server
 
-The scraping server (`src/scraping-server/`) runs as a separate Node process alongside Next.js:
+The fetching server (`src/scraping-server/`) runs as a separate Node process alongside Next.js:
 
 ```bash
 npm run start:scraper
 ```
 
-> **Note:** The scraping server requires Puppeteer and a Chromium installation. On Linux servers, install the required dependencies for Puppeteer headless Chrome.
+> **Note:** The fetching server requires Puppeteer and a Chromium installation. On Linux servers, install the required dependencies for Puppeteer headless Chrome.
 
 ### Environment checklist before going live
 
@@ -110,9 +110,9 @@ src/
 ├── lib/
 │   ├── ai/             # Gemini analysis logic
 │   ├── db/             # MySQL query helpers
-│   ├── scraper/        # Puppeteer scraper (Tender247)
+│   ├── scraper/        # Puppeteer collector (Tender247)
 │   └── screening/      # L1 keyword/rule screening
-├── scraping-server/    # Standalone cron + scrape job runner
+├── scraping-server/    # Standalone cron + fetch job runner
 └── types/              # Shared TypeScript types
 scripts/
 ├── setup-db.ts         # DB schema creation / migration
@@ -132,4 +132,4 @@ npm run db:migrate:down   # Roll back last migration
 
 ---
 
-*Built by Glasswing Solutions — Internal use only*
+*Built by Glasswing — Internal use only*

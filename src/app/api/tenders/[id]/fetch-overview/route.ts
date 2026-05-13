@@ -6,7 +6,7 @@ import type { ApiResponse } from '@/types';
 
 /**
  * POST /api/tenders/[id]/fetch-overview
- * Scrapes the Tender247 detail page for a list-scraped tender and saves the
+ * Fetches the Tender247 detail page for a list-fetched tender and saves the
  * overview (including fullSummaryText / EMD / contract period) to the DB.
  * Used to load the description on-demand in the preview panel.
  */
@@ -64,11 +64,11 @@ export async function POST(
       );
     }
 
-    const { scrapeOverviewByDetailUrl, closeBrowser } = await import('@/lib/scraper/tender247');
+    const { fetchOverviewByDetailUrl, closeBrowser } = await import('@/lib/scraper/tender247');
 
     let result;
     try {
-      result = await scrapeOverviewByDetailUrl(
+      result = await fetchOverviewByDetailUrl(
         settings.tender247_email,
         settings.tender247_password,
         detailUrl,

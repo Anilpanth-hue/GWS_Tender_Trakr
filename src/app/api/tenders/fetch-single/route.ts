@@ -27,7 +27,7 @@ function mapTender(row: Record<string, unknown>): Tender {
     detailUrl: row.detail_url as string,
     tenderOverview: parseJsonColumn(row.tender_overview),
     sourceSession: row.source_source_session as Tender['sourceSession'] ?? (row.source_session as Tender['sourceSession']),
-    scrapeRunId: row.scrape_run_id as number,
+    fetchRunId: row.scrape_run_id as number,
     l1Status: row.l1_status as Tender['l1Status'],
     l1QualificationReasons: parseJsonColumn(row.l1_qualification_reasons) ?? [],
     l1ExclusionReason: row.l1_exclusion_reason as string | null,
@@ -67,7 +67,7 @@ function mapTender(row: Record<string, unknown>): Tender {
  * Body: { t247Id: string }
  *
  * Full synchronous pipeline:
- *   login → scrape detail page → L1 screen → save to DB →
+ *   login → fetch detail page → L1 screen → save to DB →
  *   download PDF + capture ZIP URL → save documents
  *
  * Tender is saved with l1_decision = 'pending' so user reviews it
@@ -110,14 +110,14 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // ── Import scraper, screening, AI ─────────────────────────────────────────
-    const { scrapeSingleTenderById, closeBrowser } = await import('@/lib/scraper/tender247');
+    // ── Import collector, screening, AI ──────────────────────────────────────
+    const { fetchSingleTenderById, closeBrowser } = await import('@/lib/scraper/tender247');
     const { screenTender, DEFAULT_CONFIG } = await import('@/lib/screening/rules');
     const { analyzeL1 } = await import('@/lib/ai/l1-analyze');
 
-    // ── Step 1: Scrape tender detail page ─────────────────────────────────────
-    console.log(`[fetch-single] Scraping T247 #${t247Id}…`);
-    const { rawTender, overview } = await scrapeSingleTenderById(
+    // ── Step 1: Fetch tender detail page ──────────────────────────────────────
+    console.log(`[fetch-single] Fetching T247 #${t247Id}…`);
+    const { rawTender, overview } = await fetchSingleTenderById(
       settings.tender247_email,
       settings.tender247_password,
       t247Id
@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
 
     // ── Step 3: AI L1 on T247 detail page summary ─────────────────────────────
     // The overview already has structured fields (EMD, contract period, scope,
-    // eligibility) scraped directly from the T247 AI Summary section.
+    // eligibility) extracted directly from the T247 AI Summary section.
     const isRef = (v: string) => /refer\s*to\s*(tender\s*)?doc|as\s*per\s*(tender\s*)?doc|^n\.?a\.?$/i.test((v || '').trim());
     const overviewText = [
       `Tender No: ${t247Id}`,
@@ -166,13 +166,13 @@ export async function POST(req: NextRequest) {
       fullSummaryText:     l1Result.scopeOfWork || clean(overview.fullSummaryText) || '',
     };
 
-    // ── Step 4: Create scrape_run record ──────────────────────────────────────
+    // ── Step 4: Create fetch_run record ───────────────────────────────────────
     const runResult = await execute(
       `INSERT INTO scrape_runs (session, status, total_found, total_qualified, total_rejected, completed_at)
        VALUES ('manual', 'completed', 1, ?, ?, NOW())`,
       [l1Result.status === 'qualified' ? 1 : 0, l1Result.status === 'rejected' ? 1 : 0]
     );
-    const scrapeRunId = runResult.insertId;
+    const fetchRunId = runResult.insertId;
 
     // ── Step 5: Save tender (decision = pending, user reviews in L1) ──────────
     const insertResult = await execute(
@@ -184,7 +184,7 @@ export async function POST(req: NextRequest) {
           tender_overview, l1_decision)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`,
       [
-        scrapeRunId,
+        fetchRunId,
         rawTender.title, rawTender.tenderNo, rawTender.issuedBy,
         rawTender.estimatedValue, rawTender.estimatedValueRaw,
         rawTender.dueDate, rawTender.publishedDate,

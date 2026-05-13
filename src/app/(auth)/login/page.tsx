@@ -76,7 +76,7 @@ function LoginContent() {
             </div>
           </div>
           <h1 className="text-2xl font-bold" style={{ color: '#0f172a' }}>Tender Trakr</h1>
-          <p className="text-sm mt-1" style={{ color: '#64748b' }}>by Glasswing Solutions</p>
+          <p className="text-sm mt-1" style={{ color: '#64748b' }}>by Glasswing</p>
         </div>
 
         {/* Card */}

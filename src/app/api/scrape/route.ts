@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { query, execute } from '@/lib/db';
-import type { ApiResponse, ScrapeRun } from '@/types';
+import type { ApiResponse, FetchRun } from '@/types';
 
 function buildOverviewText(
   overview: {
@@ -44,10 +44,10 @@ export async function GET() {
     const runs = await query<Record<string, unknown>>(
       'SELECT * FROM scrape_runs ORDER BY started_at DESC LIMIT 50'
     );
-    const mapped: ScrapeRun[] = runs.map(r => ({
+    const mapped: FetchRun[] = runs.map(r => ({
       id: r.id as number,
-      session: r.session as ScrapeRun['session'],
-      status: r.status as ScrapeRun['status'],
+      session: r.session as FetchRun['session'],
+      status: r.status as FetchRun['status'],
       totalFound: r.total_found as number,
       totalQualified: r.total_qualified as number,
       totalRejected: r.total_rejected as number,
@@ -55,9 +55,9 @@ export async function GET() {
       startedAt: r.started_at as string,
       completedAt: r.completed_at as string | null,
     }));
-    return NextResponse.json<ApiResponse<ScrapeRun[]>>({ data: mapped });
+    return NextResponse.json<ApiResponse<FetchRun[]>>({ data: mapped });
   } catch {
-    return NextResponse.json<ApiResponse>({ error: 'Failed to fetch scrape runs' }, { status: 500 });
+    return NextResponse.json<ApiResponse>({ error: 'Failed to fetch runs' }, { status: 500 });
   }
 }
 
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json() as { session?: string };
     const session = body.session || 'manual';
 
-    const { scrapeAllTenders, scrapeDetailPageData, getBrowserInstance, closeBrowser } =
+    const { fetchAllTenders, fetchDetailPageData, getBrowserInstance, closeBrowser } =
       await import('@/lib/scraper/tender247');
     const { screenTender, DEFAULT_CONFIG } = await import('@/lib/screening/rules');
     const { analyzeL1 } = await import('@/lib/ai/l1-analyze');
@@ -86,13 +86,13 @@ export async function POST(req: NextRequest) {
     const maxTenders = parseInt(settings.scrape_max_tenders || '100', 10);
 
     const result = await execute('INSERT INTO scrape_runs (session, status) VALUES (?, ?)', [session, 'running']);
-    const scrapeRunId = result.insertId;
+    const fetchRunId = result.insertId;
 
     // Run full pipeline in background
     (async () => {
       try {
-        // ── Phase 1: Scrape listing ─────────────────────────────────────────────
-        const rawTenders = await scrapeAllTenders(
+        // ── Phase 1: Fetch listing ──────────────────────────────────────────────
+        const rawTenders = await fetchAllTenders(
           settings.tender247_email, settings.tender247_password,
           session as 'manual', maxTenders
         );
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
                 l1_status, l1_qualification_reasons, l1_exclusion_reason, l1_analysis_source)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'metadata_only')`,
             [
-              scrapeRunId, raw.title, raw.tenderNo, raw.issuedBy,
+              fetchRunId, raw.title, raw.tenderNo, raw.issuedBy,
               raw.estimatedValue, raw.estimatedValueRaw, raw.dueDate, raw.publishedDate,
               raw.location, raw.category, raw.detailUrl, raw.sourceSession,
               keywordResult.status,
@@ -139,18 +139,18 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // ── Phase 3: Scrape T247 AI Summary + AI L1 for keyword-qualified tenders ─
+        // ── Phase 3: Fetch T247 AI Summary + AI L1 for keyword-qualified tenders ─
         // Visits each detail page (logged-in browser), reads the structured AI
         // summary section (EMD, contract period, scope, eligibility), then sends
         // that clean labeled text to Gemini for L1 screening — no PDF download needed.
         const browser = getBrowserInstance();
         if (browser && docQueue.length > 0) {
-          console.log(`[Scrape] Detail page scrape + AI L1 for ${docQueue.length} keyword-qualified tenders…`);
+          console.log(`[Fetch] Detail page + AI L1 for ${docQueue.length} keyword-qualified tenders…`);
 
           for (const { id: tenderId, detailUrl, tenderNo, keywordResult } of docQueue) {
             try {
               // 3a. Visit detail page, extract T247 AI Summary (structured fields)
-              const overview = await scrapeDetailPageData(browser, detailUrl, tenderNo);
+              const overview = await fetchDetailPageData(browser, detailUrl, tenderNo);
 
               // 3b. Format as clean labeled text for Gemini
               const labeledText = buildOverviewText(overview, tenderNo);
@@ -197,11 +197,11 @@ export async function POST(req: NextRequest) {
               if (l1Result.status === 'qualified') qualified++;
               else rejected++;
 
-              console.log(`[Scrape] #${tenderId} AI L1: ${l1Result.status} (confidence: ${l1Result.confidence})`);
+              console.log(`[Fetch] #${tenderId} AI L1: ${l1Result.status} (confidence: ${l1Result.confidence})`);
 
             } catch (err) {
               // Detail page or AI failure — keyword result already saved, count as qualified
-              console.warn(`[Scrape] Detail/AI L1 failed for #${tenderId}:`, (err as Error).message);
+              console.warn(`[Fetch] Detail/AI L1 failed for #${tenderId}:`, (err as Error).message);
               qualified++;
             }
           }
@@ -211,26 +211,26 @@ export async function POST(req: NextRequest) {
 
         await execute(
           `UPDATE scrape_runs SET status = 'completed', total_found = ?, total_qualified = ?, total_rejected = ?, completed_at = NOW() WHERE id = ?`,
-          [rawTenders.length, qualified, rejected, scrapeRunId]
+          [rawTenders.length, qualified, rejected, fetchRunId]
         );
-        console.log(`[Scrape] Run #${scrapeRunId} complete — found: ${rawTenders.length}, qualified: ${qualified}, rejected: ${rejected}`);
+        console.log(`[Fetch] Run #${fetchRunId} complete — found: ${rawTenders.length}, qualified: ${qualified}, rejected: ${rejected}`);
 
       } catch (err) {
         await execute(
           `UPDATE scrape_runs SET status = 'failed', error_message = ?, completed_at = NOW() WHERE id = ?`,
-          [(err as Error).message, scrapeRunId]
+          [(err as Error).message, fetchRunId]
         );
       } finally {
         await closeBrowser();
       }
     })();
 
-    return NextResponse.json<ApiResponse<{ scrapeRunId: number }>>({
-      data: { scrapeRunId },
-      message: `Scrape started (run #${scrapeRunId}). Keyword pre-filter → doc fetch → AI L1 running in background.`,
+    return NextResponse.json<ApiResponse<{ fetchRunId: number }>>({
+      data: { fetchRunId },
+      message: `Fetch started (run #${fetchRunId}). Keyword pre-filter → doc fetch → AI L1 running in background.`,
     });
   } catch (err) {
     console.error('[API /scrape] Error:', err);
-    return NextResponse.json<ApiResponse>({ error: 'Failed to start scrape' }, { status: 500 });
+    return NextResponse.json<ApiResponse>({ error: 'Failed to start fetch' }, { status: 500 });
   }
 }

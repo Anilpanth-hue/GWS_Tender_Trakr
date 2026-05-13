@@ -1,13 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 import puppeteer, { Browser, Page } from 'puppeteer';
-import type { RawTender, ScrapeSession } from '@/types';
+import type { RawTender, FetchSession } from '@/types';
 
 const BASE_URL = 'https://www.tender247.com';
 const TENDERS_URL = `${BASE_URL}/tenders`;
 
 // How many scroll steps to do when loading more items (infinite scroll)
-const MAX_SCROLL_ROUNDS = 10; // ~150 tenders max per scrape run
+const MAX_SCROLL_ROUNDS = 10; // ~150 tenders max per fetch run
 
 let browserInstance: Browser | null = null;
 
@@ -39,7 +39,7 @@ export async function closeBrowser() {
 
 /**
  * Launch a browser, log into Tender247, and return the logged-in browser instance.
- * Use this when you need a fresh authenticated session outside of a scrape run.
+ * Use this when you need a fresh authenticated session outside of a fetch run.
  */
 export async function loginBrowser(email: string, password: string): Promise<Browser> {
   const browser = await getBrowser();
@@ -70,11 +70,11 @@ async function fillReactInput(page: Page, selector: string, value: string): Prom
 
 async function login(page: Page, email: string, password: string): Promise<boolean> {
   try {
-    console.log('[Scraper] Navigating to Tender247 homepage...');
+    console.log('[Fetcher] Navigating to Tender247 homepage...');
     await page.goto(BASE_URL, { waitUntil: 'networkidle2', timeout: 30000 });
     await new Promise(r => setTimeout(r, 3000));
 
-    console.log('[Scraper] Opening login dialog...');
+    console.log('[Fetcher] Opening login dialog...');
     await page.evaluate(() => {
       const btns = Array.from(document.querySelectorAll<HTMLButtonElement>('button[aria-haspopup="dialog"]'));
       const loginBtn = btns.find(b => /sign\s*up|log\s*in/i.test(b.textContent || ''));
@@ -87,7 +87,7 @@ async function login(page: Page, email: string, password: string): Promise<boole
     });
     await new Promise(r => setTimeout(r, 500));
 
-    console.log('[Scraper] Filling credentials...');
+    console.log('[Fetcher] Filling credentials...');
     await fillReactInput(page, 'input[name="emailId"], input[type="email"]', email);
     await new Promise(r => setTimeout(r, 200));
     await fillReactInput(page, 'input[type="password"]', password);
@@ -114,10 +114,10 @@ async function login(page: Page, email: string, password: string): Promise<boole
       return !btns.some(b => /sign\s*up|log\s*in/i.test(b.textContent || ''));
     });
 
-    console.log(`[Scraper] Login ${isLoggedIn ? '✅ successful' : '❌ failed'}`);
+    console.log(`[Fetcher] Login ${isLoggedIn ? '✅ successful' : '❌ failed'}`);
     return isLoggedIn;
   } catch (err) {
-    console.error('[Scraper] Login error:', err);
+    console.error('[Fetcher] Login error:', err);
     return false;
   }
 }
@@ -256,13 +256,13 @@ async function extractVisibleTenders(page: Page): Promise<RawItemData[]> {
   });
 }
 
-async function scrapeTendersWithScroll(
+async function fetchTendersWithScroll(
   page: Page,
   url: string,
-  session: ScrapeSession,
+  session: FetchSession,
   maxTenders: number
 ): Promise<RawTender[]> {
-  console.log(`[Scraper] Navigating to: ${url} (limit: ${maxTenders})`);
+  console.log(`[Fetcher] Navigating to: ${url} (limit: ${maxTenders})`);
   await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
   await new Promise(r => setTimeout(r, 3000));
 
@@ -273,7 +273,7 @@ async function scrapeTendersWithScroll(
       { timeout: 20000 }
     );
   } catch {
-    console.log('[Scraper] No tender items loaded on this page');
+    console.log('[Fetcher] No tender items loaded on this page');
     return [];
   }
 
@@ -306,15 +306,15 @@ async function scrapeTendersWithScroll(
 
       // Stop as soon as we hit the limit
       if (allTenders.length >= maxTenders) {
-        console.log(`[Scraper] Reached max tenders limit (${maxTenders}), stopping`);
+        console.log(`[Fetcher] Reached max tenders limit (${maxTenders}), stopping`);
         return allTenders;
       }
     }
 
-    console.log(`[Scraper] Round ${round + 1}: ${items.length} visible, ${newCount} new (total: ${allTenders.length})`);
+    console.log(`[Fetcher] Round ${round + 1}: ${items.length} visible, ${newCount} new (total: ${allTenders.length})`);
 
     if (newCount === 0) {
-      console.log('[Scraper] No new items after scroll, stopping');
+      console.log('[Fetcher] No new items after scroll, stopping');
       break;
     }
 
@@ -326,7 +326,7 @@ async function scrapeTendersWithScroll(
     // Check if more content loaded
     const newHeight = await page.evaluate(() => document.body.scrollHeight);
     if (newHeight === prevHeight) {
-      console.log('[Scraper] Page height unchanged after scroll, no more items');
+      console.log('[Fetcher] Page height unchanged after scroll, no more items');
       break;
     }
   }
@@ -334,14 +334,14 @@ async function scrapeTendersWithScroll(
   return allTenders;
 }
 
-export interface ScrapedDocument {
+export interface FetchedDocument {
   label: string;       // e.g. "MIT", "BOQ Document 1", "Tender Document 2"
   url: string;         // documents.tender247.com URL
   docType: string;     // 'individual_doc' | 'full_docs_zip' | 'summary_pdf'
 }
 
 export interface TenderDocumentResult {
-  documents: ScrapedDocument[];
+  documents: FetchedDocument[];
   // Diagnostic info — populated even when documents is empty
   diag?: {
     phaseA_jsonBodiesScanned: number;
@@ -391,7 +391,7 @@ async function waitForNewFile(dir: string, knownFiles: Set<string>, timeoutMs: n
  *  2. Click "Download All Documents" button and wait for a ZIP to land on disk.
  *  3. Click individual "Download" buttons one by one and collect each file.
  *
- * Files are saved to public/documents/{tenderId}/ and ScrapedDocument.url is
+ * Files are saved to public/documents/{tenderId}/ and FetchedDocument.url is
  * set to the local public path (/documents/{tenderId}/filename) so the route
  * can serve them directly without a separate download step.
  */
@@ -434,7 +434,7 @@ export async function fetchTenderDocuments(
     };
     browser.on('targetcreated', onNewTarget);
 
-    console.log(`[Scraper] #${tenderId} navigating to: ${detailUrl}`);
+    console.log(`[Fetcher] #${tenderId} navigating to: ${detailUrl}`);
     await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 45000 });
     await new Promise(r => setTimeout(r, 3000));
 
@@ -447,10 +447,10 @@ export async function fetchTenderDocuments(
     await page.waitForFunction(
       () => /tender\s*documents?/i.test(document.body.innerText),
       { timeout: 12000 }
-    ).catch(() => console.warn(`[Scraper] #${tenderId} "Tender Documents" section not visible`));
+    ).catch(() => console.warn(`[Fetcher] #${tenderId} "Tender Documents" section not visible`));
 
     const filesBefore = new Set(fs.readdirSync(downloadDir));
-    const found: ScrapedDocument[] = [];
+    const found: FetchedDocument[] = [];
 
     // ── Strategy 1: direct <a href> document links ────────────────────────────
     const directLinks = await page.evaluate(() =>
@@ -468,7 +468,7 @@ export async function fetchTenderDocuments(
         }))
     );
 
-    console.log(`[Scraper] #${tenderId} Direct <a href> links: ${directLinks.length}`);
+    console.log(`[Fetcher] #${tenderId} Direct <a href> links: ${directLinks.length}`);
 
     for (const link of directLinks) {
       const snap = new Set(fs.readdirSync(downloadDir));
@@ -479,13 +479,13 @@ export async function fetchTenderDocuments(
           behavior: 'allow',
           downloadPath: downloadDir,
         });
-        console.log(`[Scraper] #${tenderId} Fetching: ${link.href.substring(0, 100)}`);
+        console.log(`[Fetcher] #${tenderId} Fetching: ${link.href.substring(0, 100)}`);
         await dlPage.goto(link.href, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
         const newFiles = await waitForNewFile(downloadDir, snap, 20000);
         for (const f of newFiles) {
           const publicPath = `/documents/${tenderId}/${f}`;
           found.push({ label: link.text || f.replace(/\.[^.]+$/, ''), url: publicPath, docType: f.endsWith('.zip') ? 'full_docs_zip' : 'individual_doc' });
-          console.log(`[Scraper] #${tenderId} ✓ "${link.text}" → ${publicPath}`);
+          console.log(`[Fetcher] #${tenderId} ✓ "${link.text}" → ${publicPath}`);
         }
       } finally {
         await dlPage.close().catch(() => {});
@@ -502,14 +502,14 @@ export async function fetchTenderDocuments(
         (leaf.closest('a') || leaf.closest('button') || leaf as HTMLElement).click();
         return true;
       });
-      console.log(`[Scraper] #${tenderId} "Download All Documents" click: ${clickedAll}`);
+      console.log(`[Fetcher] #${tenderId} "Download All Documents" click: ${clickedAll}`);
 
       if (clickedAll) {
         const newFiles = await waitForNewFile(downloadDir, snapAll, 30000);
         for (const f of newFiles) {
           const publicPath = `/documents/${tenderId}/${f}`;
           found.push({ label: f.endsWith('.zip') ? 'All Tender Documents (ZIP)' : f.replace(/\.[^.]+$/, ''), url: publicPath, docType: f.endsWith('.zip') ? 'full_docs_zip' : 'individual_doc' });
-          console.log(`[Scraper] #${tenderId} ✓ ZIP/All → ${publicPath}`);
+          console.log(`[Fetcher] #${tenderId} ✓ ZIP/All → ${publicPath}`);
         }
       }
     }
@@ -521,7 +521,7 @@ export async function fetchTenderDocuments(
           .filter(e => e.children.length === 0 && /^download$/i.test((e.textContent || '').trim()))
           .length
       );
-      console.log(`[Scraper] #${tenderId} Individual "Download" buttons: ${downloadBtnCount}`);
+      console.log(`[Fetcher] #${tenderId} Individual "Download" buttons: ${downloadBtnCount}`);
 
       for (let i = 0; i < downloadBtnCount; i++) {
         const snapBtn = new Set(fs.readdirSync(downloadDir));
@@ -538,13 +538,13 @@ export async function fetchTenderDocuments(
         }, i);
 
         if (!btnLabel) continue;
-        console.log(`[Scraper] #${tenderId} Clicking "Download" for "${btnLabel}"`);
+        console.log(`[Fetcher] #${tenderId} Clicking "Download" for "${btnLabel}"`);
 
         const newFiles = await waitForNewFile(downloadDir, snapBtn, 20000);
         for (const f of newFiles) {
           const publicPath = `/documents/${tenderId}/${f}`;
           found.push({ label: btnLabel || f.replace(/\.[^.]+$/, ''), url: publicPath, docType: f.endsWith('.zip') ? 'full_docs_zip' : 'individual_doc' });
-          console.log(`[Scraper] #${tenderId} ✓ "${btnLabel}" → ${publicPath}`);
+          console.log(`[Fetcher] #${tenderId} ✓ "${btnLabel}" → ${publicPath}`);
         }
       }
     }
@@ -561,7 +561,7 @@ export async function fetchTenderDocuments(
       }
     }
 
-    console.log(`[Scraper] #${tenderId} FINAL ${found.length} doc(s) downloaded`);
+    console.log(`[Fetcher] #${tenderId} FINAL ${found.length} doc(s) downloaded`);
 
     return {
       documents: found,
@@ -570,7 +570,7 @@ export async function fetchTenderDocuments(
     };
 
   } catch (err) {
-    console.error(`[Scraper] fetchTenderDocuments error for #${tenderId}:`, (err as Error).message);
+    console.error(`[Fetcher] fetchTenderDocuments error for #${tenderId}:`, (err as Error).message);
     return { documents: [], pdfFileName: null, pdfFilePath: null, pdfPublicPath: null, pdfFileSize: null, fullDocsUrl: null };
   } finally {
     await page.close().catch(() => {});
@@ -585,6 +585,8 @@ export interface SingleTenderResult {
     orgTenderId: string;
     estimatedCost: string;
     emdValue: string;
+    /** Raw EMD amount in rupees from T247's internal API (e.g. "1506000") */
+    Emd_Amount: string;
     documentFees: string;
     completionPeriod: string;
     siteLocation: string;
@@ -604,6 +606,92 @@ export interface SingleTenderResult {
     /** Every raw label→value pair from the T247 AI Generated Summary section */
     aiSummaryFields: Record<string, string>;
   };
+}
+
+/** Structured data extracted from T247's internal tender detail API response */
+interface T247ApiCapture {
+  emdRaw?: string;          // raw integer e.g. "1506000"
+  emdFormatted?: string;    // display value e.g. "1506000/-"
+  contractPeriod?: string;  // from Contract_Period key
+  completionPeriod?: string; // from Completion_Period key
+}
+
+/**
+ * Register a Puppeteer response listener BEFORE page.goto() so T247's internal
+ * API call (fired during page load) is captured. Returns a function; call it
+ * after the page has settled to retrieve the captured data (waits up to 5 s).
+ */
+function startApiCapture(page: Page): () => Promise<T247ApiCapture> {
+  const captured: T247ApiCapture = {};
+  let resolved = false;
+  let resolveCapture!: (d: T247ApiCapture) => void;
+  const capturePromise = new Promise<T247ApiCapture>(res => { resolveCapture = res; });
+
+  const handler = async (response: import('puppeteer').HTTPResponse) => {
+    if (resolved) return;
+    try {
+      const ct = response.headers()['content-type'] || '';
+      if (!ct.includes('json')) return; // intercept any JSON response (domain-agnostic)
+
+      const text = await response.text().catch(() => '');
+      if (!text) return;
+
+      let json: Record<string, unknown>;
+      try { json = JSON.parse(text); } catch { return; }
+
+      // T247 may return data directly or nested
+      const candidates = [json, json?.data, json?.result, json?.tenderDetail, json?.tender]
+        .filter((c): c is Record<string, unknown> => !!c && typeof c === 'object');
+
+      for (const obj of candidates) {
+        if (
+          obj.Emd_Amount === undefined &&
+          obj.Contract_Period === undefined &&
+          obj.Completion_Period === undefined &&
+          obj.EMD_Value === undefined
+        ) continue;
+
+        const pick = (...keys: string[]): string | undefined => {
+          for (const k of keys) {
+            const v = String(obj[k] ?? '').trim();
+            if (v && v !== 'null' && v !== 'undefined' && v !== '0') return v;
+          }
+          return undefined;
+        };
+
+        captured.emdRaw         = pick('Emd_Amount', 'EMD_Amount', 'emd_amount');
+        captured.emdFormatted   = pick('EMD_Value', 'Emd_Value', 'emd_value');
+        captured.contractPeriod   = pick('Contract_Period', 'contract_period');
+        captured.completionPeriod = pick('Completion_Period', 'completion_period');
+
+        console.log(`[Fetcher] ✓ T247 API captured — Emd_Amount:"${captured.emdRaw}" EMD_Value:"${captured.emdFormatted}" Contract_Period:"${captured.contractPeriod}" Completion_Period:"${captured.completionPeriod}"`);
+        resolved = true;
+        resolveCapture(captured);
+        break;
+      }
+    } catch { /* swallow — bad response or already consumed */ }
+  };
+
+  page.on('response', handler);
+
+  return async () => {
+    const result = await Promise.race([
+      capturePromise,
+      new Promise<T247ApiCapture>(res => setTimeout(() => res(captured), 5000)),
+    ]);
+    page.off('response', handler);
+    resolved = true;
+    return result;
+  };
+}
+
+/** Format a raw integer rupee amount into a human-readable string. */
+function formatEmdRaw(raw: string): string {
+  const n = Number(raw.replace(/[^0-9]/g, ''));
+  if (isNaN(n) || n === 0) return raw;
+  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(2)} Cr`;
+  if (n >= 100_000)    return `₹${(n / 100_000).toFixed(2)} Lakh`;
+  return `₹${n.toLocaleString('en-IN')}`;
 }
 
 /**
@@ -919,7 +1007,9 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
       title: title || '',
       bidValueRaw, dueDate, issuedBy, location,
       t247Id: tid,
-      orgTenderId, estimatedCost: bidValueRaw, emdValue: emdFallback, documentFees,
+      orgTenderId, estimatedCost: bidValueRaw, emdValue: emdFallback,
+      Emd_Amount: '', // populated post-evaluation from T247 API capture
+      documentFees,
       completionPeriod: periodFallback, siteLocation: location, contactPerson, contactAddress,
       quantity, msmeExemption, startupExemption, jvConsortium, reverseAuction,
       performanceBankGuarantee: pbg, hardCopySubmission: hardCopy,
@@ -931,7 +1021,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
 }
 
 /**
- * Scrape a single tender by its Tender247 numeric ID.
+ * Fetch a single tender by its Tender247 numeric ID.
  *
  * Strategy:
  *  1. Login
@@ -942,7 +1032,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
  *     overview / contact / EMD / schedule fields
  *  4. Return rawTender (title from listing) + overview (from detail page)
  */
-export async function scrapeSingleTenderById(
+export async function fetchSingleTenderById(
   email: string,
   password: string,
   t247Id: string
@@ -963,7 +1053,7 @@ export async function scrapeSingleTenderById(
     // Tender247's listing search works by keywords — searching for a numeric T247 ID
     // may not return that specific card. Instead we navigate to a page that contains
     // the tender link so extractVisibleTenders() can read the correct card title.
-    console.log(`[Scraper] Looking for T247 #${t247Id} card on listing page…`);
+    console.log(`[Fetcher] Looking for T247 #${t247Id} card on listing page…`);
 
     let matchedItem: RawItemData | null = null;
 
@@ -988,9 +1078,9 @@ export async function scrapeSingleTenderById(
     }
 
     if (matchedItem) {
-      console.log(`[Scraper] ✓ Found on listing page: "${matchedItem.title}"`);
+      console.log(`[Fetcher] ✓ Found on listing page: "${matchedItem.title}"`);
     } else {
-      console.log(`[Scraper] Listing search did not return card for #${t247Id} — will extract from detail page`);
+      console.log(`[Fetcher] Listing search did not return card for #${t247Id} — will extract from detail page`);
     }
 
     // ── Step 2: Navigate to detail page for overview fields ────────────────────
@@ -999,28 +1089,43 @@ export async function scrapeSingleTenderById(
       ? `${BASE_URL}${matchedItem.detailPath}`
       : `${BASE_URL}/auth/tender/${t247Id}/`;
 
-    console.log(`[Scraper] Loading detail page: ${detailUrl}`);
+    console.log(`[Fetcher] Loading detail page: ${detailUrl}`);
+    // Register API capture BEFORE navigation so the T247 internal API response is caught
+    const stopCapture = startApiCapture(page);
     await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     await new Promise(r => setTimeout(r, 3000));
 
     // Capture the final URL after any redirect (includes the slug: /auth/tender/{id}/{slug})
     // This full URL is what we must use for document download later.
     const finalDetailUrl = page.url().startsWith('http') ? page.url() : detailUrl;
-    console.log(`[Scraper] Final detail URL: ${finalDetailUrl}`);
+    console.log(`[Fetcher] Final detail URL: ${finalDetailUrl}`);
 
     // Scroll to trigger lazy-loaded AI Summary section, then wait for it to appear
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForFunction(
       () => /AI Generated|Tender Summary|Completion Period|Contract Period|Emd Amount|EMD Amount/i.test(document.body.innerText),
       { timeout: 10000 }
-    ).catch(() => console.warn(`[Scraper] #${t247Id} AI Summary section not detected after scroll`));
+    ).catch(() => console.warn(`[Fetcher] #${t247Id} AI Summary section not detected after scroll`));
     await new Promise(r => setTimeout(r, 1000));
     await page.evaluate(() => window.scrollTo(0, 0));
     await new Promise(r => setTimeout(r, 500));
 
-    const pageData = await extractTenderDetailPage(page, t247Id);
-    console.log(`[Scraper] #${t247Id} AI summary fields found: ${Object.keys(pageData.aiSummaryFields).join(', ') || 'NONE'}`);
-    console.log(`[Scraper] #${t247Id} EMD: "${pageData.emdValue}" | Completion: "${pageData.completionPeriod}" | Eligibility: ${pageData.eligibilityCriteria ? 'found' : 'empty'}`);
+    const rawPageData = await extractTenderDetailPage(page, t247Id);
+    const apiCapture = await stopCapture();
+
+    // Merge API-captured values (more reliable than DOM) into the page data.
+    // API has priority over DOM for both EMD and contract period.
+    const emdFromApi = apiCapture.emdFormatted || (apiCapture.emdRaw ? formatEmdRaw(apiCapture.emdRaw) : '');
+    const periodFromApi = apiCapture.contractPeriod || apiCapture.completionPeriod || '';
+    const pageData = {
+      ...rawPageData,
+      emdValue: emdFromApi || rawPageData.emdValue,
+      completionPeriod: periodFromApi || rawPageData.completionPeriod,
+      Emd_Amount: apiCapture.emdRaw || rawPageData.aiSummaryFields['Emd_Amount'] || '',
+    };
+
+    console.log(`[Fetcher] #${t247Id} AI summary fields found: ${Object.keys(pageData.aiSummaryFields).join(', ') || 'NONE'}`);
+    console.log(`[Fetcher] #${t247Id} EMD: "${pageData.emdValue}" Emd_Amount:"${pageData.Emd_Amount}" | Completion: "${pageData.completionPeriod}" | Eligibility: ${pageData.eligibilityCriteria ? 'found' : 'empty'}`);
 
     // ── Build final values — priority rules ────────────────────────────────────
     //
@@ -1037,7 +1142,7 @@ export async function scrapeSingleTenderById(
 
     const finalTitle = matchedItem?.title || pageData.title || `Tender T247-${t247Id}`;
 
-    // Org from listing — split "OrgName-City, State" (same pattern as regular scrape)
+    // Org from listing — split "OrgName-City, State" (same pattern as regular fetch)
     const orgParts = matchedItem?.orgLocation?.split('-') ?? [];
     const listingOrg = orgParts[0]?.trim() || '';
     const listingLocation = orgParts.slice(1).join('-').trim();
@@ -1056,7 +1161,7 @@ export async function scrapeSingleTenderById(
     // Value
     const finalValueRaw = matchedItem?.bidValueRaw || pageData.bidValueRaw || '';
 
-    console.log(`[Scraper] Final values — title: "${finalTitle}" | org: "${finalIssuedBy}" | date: "${finalDueDate}" | value: "${finalValueRaw}"`);
+    console.log(`[Fetcher] Final values — title: "${finalTitle}" | org: "${finalIssuedBy}" | date: "${finalDueDate}" | value: "${finalValueRaw}"`);
 
     const rawTender: RawTender = {
       tenderNo: t247Id,
@@ -1075,17 +1180,17 @@ export async function scrapeSingleTenderById(
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { title: _t, bidValueRaw: _b, dueDate: _d, issuedBy: _i, location: _l, ...overview } = pageData;
 
-    console.log(`[Scraper] ✓ Single tender #${t247Id} scraped: "${rawTender.title}"`);
+    console.log(`[Fetcher] ✓ Single tender #${t247Id} fetched: "${rawTender.title}"`);
     return { rawTender, overview };
   } finally {
     await page.close();
   }
 }
 
-export async function scrapeAllTenders(
+export async function fetchAllTenders(
   email: string,
   password: string,
-  session: ScrapeSession = 'manual',
+  session: FetchSession = 'manual',
   maxTenders = 100
 ): Promise<RawTender[]> {
   const browser = await getBrowser();
@@ -1102,12 +1207,12 @@ export async function scrapeAllTenders(
       throw new Error('Failed to login to Tender247. Please check credentials.');
     }
 
-    // Scrape main tenders listing (sorted newest first)
-    const tenders = await scrapeTendersWithScroll(
+    // Fetch main tenders listing (sorted newest first)
+    const tenders = await fetchTendersWithScroll(
       page, `${TENDERS_URL}?sort=date&order=desc`, session, maxTenders
     );
 
-    console.log(`[Scraper] Total unique tenders scraped: ${tenders.length}`);
+    console.log(`[Fetcher] Total unique tenders fetched: ${tenders.length}`);
     return tenders;
   } finally {
     await page.close();
@@ -1115,10 +1220,10 @@ export async function scrapeAllTenders(
 }
 
 /**
- * Scrape the T247 AI Summary / detail page using an already-logged-in browser.
- * Use this during batch scraping (Phase 3) — no re-login needed, opens a new tab.
+ * Fetch the T247 AI Summary / detail page using an already-logged-in browser.
+ * Use this during batch fetching (Phase 3) — no re-login needed, opens a new tab.
  */
-export async function scrapeDetailPageData(
+export async function fetchDetailPageData(
   browser: Browser,
   detailUrl: string,
   t247Id: string
@@ -1129,6 +1234,7 @@ export async function scrapeDetailPageData(
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
+    const stopCapture = startApiCapture(page);
     await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     await new Promise(r => setTimeout(r, 2000));
 
@@ -1142,9 +1248,19 @@ export async function scrapeDetailPageData(
     await new Promise(r => setTimeout(r, 500));
     await page.evaluate(() => window.scrollTo(0, 0));
 
-    const { title: _t, bidValueRaw: _b, dueDate: _d, issuedBy: _i, location: _l, ...overview } =
+    const { title: _t, bidValueRaw: _b, dueDate: _d, issuedBy: _i, location: _l, ...rawOverview } =
       await extractTenderDetailPage(page, t247Id);
-    return overview;
+
+    const apiCapture = await stopCapture();
+    const emdFromApi = apiCapture.emdFormatted || (apiCapture.emdRaw ? formatEmdRaw(apiCapture.emdRaw) : '');
+    const periodFromApi = apiCapture.contractPeriod || apiCapture.completionPeriod || '';
+
+    return {
+      ...rawOverview,
+      emdValue: emdFromApi || rawOverview.emdValue,
+      completionPeriod: periodFromApi || rawOverview.completionPeriod,
+      Emd_Amount: apiCapture.emdRaw || rawOverview.Emd_Amount || '',
+    };
   } finally {
     await page.close();
   }
@@ -1152,25 +1268,25 @@ export async function scrapeDetailPageData(
 
 export interface OverviewRefreshResult {
   overview: SingleTenderResult['overview'];
-  /** Re-scraped due date in YYYY-MM-DD format (or null if not found) */
+  /** Re-fetched due date in YYYY-MM-DD format (or null if not found) */
   dueDate: string | null;
-  /** Re-scraped estimated cost raw string */
+  /** Re-fetched estimated cost raw string */
   estimatedCostRaw: string;
 }
 
 /**
- * Scrape overview fields + key dates for a tender already in the DB.
- * Returns the full overview AND the re-scraped due date so callers can
+ * Fetch overview fields + key dates for a tender already in the DB.
+ * Returns the full overview AND the re-fetched due date so callers can
  * detect corrigendum / date extensions.
  */
-export async function scrapeOverviewByDetailUrl(
+export async function fetchOverviewByDetailUrl(
   email: string,
   password: string,
   detailUrl: string,
   t247Id: string
 ): Promise<OverviewRefreshResult> {
   // Always start with a fresh browser — prevents "Connection closed" race condition
-  // when a background scrape is still running and sharing the same browser instance.
+  // when a background fetch is still running and sharing the same browser instance.
   if (browserInstance) {
     try { await browserInstance.close(); } catch { /* already dead */ }
     browserInstance = null;
@@ -1189,6 +1305,7 @@ export async function scrapeOverviewByDetailUrl(
     if (!loggedIn) throw new Error('Failed to login to Tender247. Check credentials in Settings.');
 
     // Use 'domcontentloaded' first for faster load, then wait for key selector
+    const stopCapture = startApiCapture(page);
     await page.goto(detailUrl, { waitUntil: 'domcontentloaded', timeout: 45000 });
     // Wait for page to settle and lazy sections to render
     await new Promise(r => setTimeout(r, 3000));
@@ -1197,8 +1314,19 @@ export async function scrapeOverviewByDetailUrl(
     await page.evaluate(() => window.scrollTo(0, 0));
     await new Promise(r => setTimeout(r, 1000));
 
-    const pageData = await extractTenderDetailPage(page, t247Id);
-    const { title: _t, bidValueRaw, dueDate, issuedBy: _i, location: _l, ...overview } = pageData;
+    const rawPageData = await extractTenderDetailPage(page, t247Id);
+    const apiCapture = await stopCapture();
+
+    const emdFromApi = apiCapture.emdFormatted || (apiCapture.emdRaw ? formatEmdRaw(apiCapture.emdRaw) : '');
+    const periodFromApi = apiCapture.contractPeriod || apiCapture.completionPeriod || '';
+
+    const { title: _t, bidValueRaw, dueDate, issuedBy: _i, location: _l, ...rawOverview } = rawPageData;
+    const overview: SingleTenderResult['overview'] = {
+      ...rawOverview,
+      emdValue: emdFromApi || rawOverview.emdValue,
+      completionPeriod: periodFromApi || rawOverview.completionPeriod,
+      Emd_Amount: apiCapture.emdRaw || rawOverview.Emd_Amount || '',
+    };
 
     return {
       overview,

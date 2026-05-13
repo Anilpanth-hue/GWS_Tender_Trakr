@@ -51,7 +51,7 @@ export async function GET() {
       category: t.category as string,
       detailUrl: t.detail_url as string,
       sourceSession: t.source_session as Tender['sourceSession'],
-      scrapeRunId: t.scrape_run_id as number,
+      fetchRunId: t.scrape_run_id as number,
       tenderOverview: parseJsonColumn(t.tender_overview),
       l1Status: t.l1_status as Tender['l1Status'],
       l1QualificationReasons: parseJsonColumn(t.l1_qualification_reasons) ?? [],

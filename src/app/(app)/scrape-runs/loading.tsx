@@ -1,4 +1,4 @@
-export default function ScrapeRunsLoading() {
+export default function FetchRunsLoading() {
   return (
     <div className="p-6 max-w-[1100px] mx-auto">
       {/* Header */}
