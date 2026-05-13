@@ -65,7 +65,7 @@ export async function POST(
       else if (typeof raw === 'string') l2 = JSON.parse(raw);
     } catch { /* no analysis yet */ }
 
-    // ── Generate email body via Gemini ────────────────────────────────────
+    // ── Build email ───────────────────────────────────────────────────────
     const appUrl = (process.env.NEXTAUTH_URL || 'http://localhost:3000').replace(/\/$/, '');
     const analysisUrl = `${appUrl}/analysis/${id}`;
     const detailUrl   = (tender.detail_url as string) || '';
@@ -77,70 +77,8 @@ export async function POST(
     const assigneeFirstName = assigneeEmail.split('@')[0].split('.')[0];
     const assigneeName = assigneeFirstName.charAt(0).toUpperCase() + assigneeFirstName.slice(1);
 
-    const tenderDetails = [
-      `Title: ${tender.title}`,
-      `T247 ID: T247-${tender.tender_no}`,
-      `Issued By: ${tender.issued_by}`,
-      `Location: ${tender.location || 'Not specified'}`,
-      `Estimated Value: ${tender.estimated_value_raw || 'Not specified'}`,
-      `Due Date: ${tender.due_date ? new Date(tender.due_date as string).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not specified'}`,
-      l2.recommendedAction ? `GWS AI Recommendation: ${l2.recommendedAction}` : '',
-      l2.gwsRelevanceScore  ? `GWS Relevance Score: ${l2.gwsRelevanceScore}/10` : '',
-      l2.winProbabilityAssessment ? `Win Probability: ${l2.winProbabilityAssessment.split('—')[0].trim()}` : '',
-      l2.scopeOfWork        ? `Scope of Work: ${l2.scopeOfWork.substring(0, 300)}${l2.scopeOfWork.length > 300 ? '...' : ''}` : '',
-    ].filter(Boolean).join('\n');
-
-    const geminiPrompt = `You are drafting a professional internal business email for GlassWing Solutions (GWS), a Mumbai-based multimodal logistics company.
-
-SENDER: ${senderName} (${senderEmail}) — the person assigning this tender
-RECIPIENT NAME: ${assigneeName}
-RECIPIENT EMAIL: ${assigneeEmail}
-
-Write a concise, professional HTML email body where ${senderName} assigns the following tender to ${assigneeName} and asks them to review it.
-
-TENDER DETAILS:
-${tenderDetails}
-
-IMPORTANT LINKS (include these prominently):
-- GWS Platform AI Analysis: ${analysisUrl}
-- Original Tender on Tender247: ${detailUrl}
-
-EMAIL REQUIREMENTS:
-1. Start with: Dear ${assigneeName},
-2. Brief intro — ${senderName} is assigning this tender for review and follow-up
-3. A clean tender summary table with the key details above
-4. Highlight the AI recommendation and relevance score if available
-5. Ask them to review the full AI analysis at the platform link and the original tender at Tender247
-6. Mention the due date urgently if it's within 2 weeks
-7. Sign off professionally from ${senderName}, GlassWing Solutions
-
-FORMATTING:
-- Return ONLY the HTML email body (start with <div style="font-family:...)
-- Use inline CSS only — clean, professional, corporate style
-- Use a readable font, light background for the tender table, accent color #7c3aed (GWS brand)
-- No markdown, no code fences, no explanation — pure HTML only`;
-
-    let emailHtml = '';
-    try {
-      const { genkit }   = await import('genkit');
-      const { googleAI } = await import('@genkit-ai/googleai');
-      const ai = genkit({ plugins: [googleAI({ apiKey: process.env.GEMINI_API_KEY })] });
-
-      const result = await ai.generate({
-        model: 'googleai/gemini-2.5-flash',
-        prompt: geminiPrompt,
-        config: { temperature: 0.4, maxOutputTokens: 2048 },
-      });
-      // Strip markdown fences, then find where the HTML actually starts
-      let raw = result.text.replace(/^```html?\s*/i, '').replace(/```\s*$/, '').trim();
-      const htmlStart = raw.indexOf('<');
-      if (htmlStart > 0) raw = raw.substring(htmlStart);
-      emailHtml = raw;
-    } catch (geminiErr) {
-      console.error('[AssignOwner] Gemini error:', geminiErr);
-      // Fallback: plain HTML email
-      emailHtml = buildFallbackEmail(senderName, assigneeName, tender, l2, analysisUrl, detailUrl);
-    }
+    // Always use the reliable template — Gemini was returning incomplete responses
+    const emailHtml = buildAssignmentEmail(senderName, senderEmail, assigneeName, tender, l2, analysisUrl, detailUrl);
 
     const emailSubject = `Tender Assignment: ${tender.title} [T247-${tender.tender_no}]`;
 
@@ -225,67 +163,124 @@ FORMATTING:
   }
 }
 
-/** Plain HTML email used if Gemini is unavailable */
-function buildFallbackEmail(
+/** Reliable HTML assignment email — all key info guaranteed present */
+function buildAssignmentEmail(
   senderName: string,
+  senderEmail: string,
   assigneeName: string,
   tender: Record<string, unknown>,
-  l2: { recommendedAction?: string; gwsRelevanceScore?: number; scopeOfWork?: string },
+  l2: { recommendedAction?: string; gwsRelevanceScore?: number; scopeOfWork?: string; winProbabilityAssessment?: string },
   analysisUrl: string,
   detailUrl: string
 ): string {
+  const dueDate = tender.due_date
+    ? new Date(tender.due_date as string).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+    : '—';
+
+  // Warn if due date is within 14 days
+  const daysUntilDue = tender.due_date
+    ? Math.ceil((new Date(tender.due_date as string).getTime() - Date.now()) / 86400000)
+    : null;
+  const urgentBanner = daysUntilDue !== null && daysUntilDue <= 14
+    ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px 16px;margin-bottom:20px;color:#b91c1c;font-size:13px;font-weight:600">
+        ⚠️ Due in ${daysUntilDue} day${daysUntilDue === 1 ? '' : 's'} — please act urgently.
+       </div>`
+    : '';
+
+  const aiRows = [
+    l2.recommendedAction ? `
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">AI Recommendation</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#7c3aed">${l2.recommendedAction}</td>
+      </tr>` : '',
+    l2.gwsRelevanceScore ? `
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;width:160px">Relevance Score</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${l2.gwsRelevanceScore}/10</td>
+      </tr>` : '',
+    l2.winProbabilityAssessment ? `
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">Win Probability</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${l2.winProbabilityAssessment.split('—')[0].trim()}</td>
+      </tr>` : '',
+  ].filter(Boolean).join('');
+
   return `
 <div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1e293b">
-  <div style="background:linear-gradient(135deg,#7c3aed,#22d3ee);padding:24px 28px;border-radius:12px 12px 0 0">
-    <p style="margin:0;color:#fff;font-size:13px;opacity:0.8">GlassWing Solutions — Internal</p>
-    <h1 style="margin:6px 0 0;color:#fff;font-size:20px;font-weight:700">Tender Assignment</h1>
+
+  <!-- Header -->
+  <div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:24px 28px;border-radius:12px 12px 0 0">
+    <p style="margin:0;color:rgba(255,255,255,0.75);font-size:12px;text-transform:uppercase;letter-spacing:0.05em">GlassWing Solutions — Internal</p>
+    <h1 style="margin:6px 0 0;color:#fff;font-size:22px;font-weight:700">📋 Tender Assignment</h1>
   </div>
-  <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:28px">
-    <p>Dear ${assigneeName},</p>
-    <p>I am assigning the following tender to you for review and follow-up. Please go through the details and the AI analysis at the earliest.</p>
 
-    <table style="width:100%;border-collapse:collapse;margin:20px 0;font-size:13px">
-      <tr style="background:#f8fafc">
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;width:160px;border-bottom:1px solid #e2e8f0">Title</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${tender.title}</td>
-      </tr>
-      <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0">T247 ID</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">T247-${tender.tender_no}</td>
-      </tr>
-      <tr style="background:#f8fafc">
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0">Issued By</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${tender.issued_by}</td>
-      </tr>
-      <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0">Est. Value</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${tender.estimated_value_raw || '—'}</td>
-      </tr>
-      <tr style="background:#f8fafc">
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0">Due Date</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${tender.due_date ? new Date(tender.due_date as string).toLocaleDateString('en-IN') : '—'}</td>
-      </tr>
-      ${l2.recommendedAction ? `
-      <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0">AI Recommendation</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#7c3aed">${l2.recommendedAction}</td>
-      </tr>` : ''}
-      ${l2.gwsRelevanceScore ? `
-      <tr style="background:#f8fafc">
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0">Relevance Score</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${l2.gwsRelevanceScore}/10</td>
-      </tr>` : ''}
-    </table>
+  <!-- Body -->
+  <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:28px 32px">
 
-    <p style="margin-top:20px;font-weight:600">Important Links:</p>
-    <p>
-      📊 <a href="${analysisUrl}" style="color:#7c3aed">View AI Analysis on GWS Platform</a><br>
-      🔗 <a href="${detailUrl}" style="color:#0284c7">View Original Tender on Tender247</a>
+    <p style="margin:0 0 6px">Dear <strong>${assigneeName}</strong>,</p>
+    <p style="margin:0 0 20px;color:#475569">
+      <strong>${senderName}</strong> (<a href="mailto:${senderEmail}" style="color:#7c3aed">${senderEmail}</a>) has assigned the following tender to you for review and follow-up.
+      Please go through the details and the AI analysis at the earliest.
     </p>
 
-    <p>Please review and take the necessary action at the earliest. Let me know if you have any questions.</p>
+    ${urgentBanner}
 
-    <p style="margin-top:24px">Best regards,<br><strong>${senderName}</strong><br>GlassWing Solutions</p>
+    <!-- Tender details table -->
+    <table style="width:100%;border-collapse:collapse;margin:0 0 24px;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">Title</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:600">${tender.title}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;width:160px">T247 ID</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">T247-${tender.tender_no}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">Issued By</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${tender.issued_by || '—'}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;width:160px">Location</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${tender.location || '—'}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">Est. Value</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#0f172a">${tender.estimated_value_raw || '—'}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:${aiRows ? '1px solid #e2e8f0' : 'none'};width:160px">Due Date</td>
+        <td style="padding:10px 14px;border-bottom:${aiRows ? '1px solid #e2e8f0' : 'none'};font-weight:600;color:${daysUntilDue !== null && daysUntilDue <= 14 ? '#b91c1c' : '#0f172a'}">${dueDate}</td>
+      </tr>
+      ${aiRows}
+    </table>
+
+    <!-- Action links -->
+    <table style="width:100%;border-collapse:collapse;margin-bottom:24px">
+      <tr>
+        <td style="padding:0 8px 0 0;width:50%">
+          <a href="${analysisUrl}"
+             style="display:block;text-align:center;padding:12px 16px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600">
+            📊 View AI Analysis on GWS Platform
+          </a>
+        </td>
+        <td style="padding:0 0 0 8px;width:50%">
+          <a href="${detailUrl}"
+             style="display:block;text-align:center;padding:12px 16px;background:#0284c7;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600">
+            🔗 View Tender on Tender247
+          </a>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 24px;color:#475569;font-size:13px">
+      Please review and take the necessary action. Feel free to reach out if you have any questions.
+    </p>
+
+    <p style="margin:0;border-top:1px solid #e2e8f0;padding-top:20px;font-size:13px">
+      Best regards,<br>
+      <strong>${senderName}</strong><br>
+      <span style="color:#64748b">GlassWing Solutions</span>
+    </p>
   </div>
 </div>`;
 }
