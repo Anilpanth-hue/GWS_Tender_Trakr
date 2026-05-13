@@ -7,14 +7,32 @@ import { queryOne, query, execute } from '@/lib/db';
 import { analyzeTenderL2 } from '@/lib/ai/analyze-tender';
 import type { ApiResponse, TenderL2Analysis } from '@/types';
 
-/** Recursively find all PDFs inside a directory (including nested folders) */
-function findPdfsInDir(dir: string): string[] {
+/**
+ * Recursively find all PDFs inside a directory AND extract any nested ZIPs found along the way.
+ * T247 ZIPs often contain a second ZIP which holds the actual tender PDF.
+ */
+async function findPdfsInDirRecursive(dir: string, depth = 0): Promise<string[]> {
   const results: string[] = [];
-  if (!fs.existsSync(dir)) return results;
+  if (!fs.existsSync(dir) || depth > 4) return results;
+
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) results.push(...findPdfsInDir(full));
-    else if (entry.name.toLowerCase().endsWith('.pdf')) results.push(full);
+    if (entry.isDirectory()) {
+      results.push(...await findPdfsInDirRecursive(full, depth + 1));
+    } else if (entry.name.toLowerCase().endsWith('.pdf')) {
+      results.push(full);
+    } else if (entry.name.toLowerCase().endsWith('.zip')) {
+      // Nested ZIP — extract it and recurse
+      const nestedExtractDir = full.slice(0, -4) + '_extracted';
+      try {
+        const extractZip = (await import('extract-zip')).default;
+        await extractZip(full, { dir: nestedExtractDir });
+        console.log(`[Analysis] Extracted nested ZIP: ${entry.name}`);
+        results.push(...await findPdfsInDirRecursive(nestedExtractDir, depth + 1));
+      } catch (e) {
+        console.warn(`[Analysis] Failed to extract nested ZIP ${entry.name}:`, (e as Error).message);
+      }
+    }
   }
   return results;
 }
@@ -123,7 +141,8 @@ export async function POST(
       try {
         const extractZip = (await import('extract-zip')).default;
         await extractZip(abs, { dir: extractDir });
-        const pdfs = findPdfsInDir(extractDir); // recursive — finds PDFs in all sub-folders
+        // Recursively extract nested ZIPs and collect all PDFs
+        const pdfs = await findPdfsInDirRecursive(extractDir);
         console.log(`[Analysis] ZIP extracted: found ${pdfs.length} PDF(s) inside ${path.basename(abs)}`);
         for (const p of pdfs) {
           console.log(`  → ${path.relative(extractDir, p)} (${Math.round(fs.statSync(p).size / 1024)}KB)`);
