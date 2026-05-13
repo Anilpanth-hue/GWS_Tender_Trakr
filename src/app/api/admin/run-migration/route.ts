@@ -25,7 +25,8 @@ export async function POST() {
            'assigned_by_email', 'assigned_by_name',
            'tender_overview', 'l1_scope_of_work', 'l1_analysis_source',
            'bid_status', 'bid_status_updated_at', 'bid_status_updated_by',
-           'bid_amount', 'bid_submitted_at'
+           'bid_amount', 'bid_submitted_at',
+           'rejected_reason', 'bid_evaluated_remark', 'bid_dropped_reason'
          )`
     );
     const has = new Set(existing.map(r => r.COLUMN_NAME));
@@ -44,6 +45,9 @@ export async function POST() {
       ['bid_status_updated_by', 'ALTER TABLE tenders ADD COLUMN bid_status_updated_by VARCHAR(255) NULL'],
       ['bid_amount',            'ALTER TABLE tenders ADD COLUMN bid_amount DECIMAL(15,2) NULL'],
       ['bid_submitted_at',      'ALTER TABLE tenders ADD COLUMN bid_submitted_at TIMESTAMP NULL'],
+      ['rejected_reason',       'ALTER TABLE tenders ADD COLUMN rejected_reason TEXT NULL'],
+      ['bid_evaluated_remark',  'ALTER TABLE tenders ADD COLUMN bid_evaluated_remark TEXT NULL'],
+      ['bid_dropped_reason',    'ALTER TABLE tenders ADD COLUMN bid_dropped_reason TEXT NULL'],
     ];
 
     // ── users table columns ───────────────────────────────────────────────
