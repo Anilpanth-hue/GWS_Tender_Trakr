@@ -23,7 +23,9 @@ export async function POST() {
          AND COLUMN_NAME IN (
            'owner_email', 'owner_assigned_at',
            'assigned_by_email', 'assigned_by_name',
-           'tender_overview', 'l1_scope_of_work', 'l1_analysis_source'
+           'tender_overview', 'l1_scope_of_work', 'l1_analysis_source',
+           'bid_status', 'bid_status_updated_at', 'bid_status_updated_by',
+           'bid_amount', 'bid_submitted_at'
          )`
     );
     const has = new Set(existing.map(r => r.COLUMN_NAME));
@@ -37,6 +39,11 @@ export async function POST() {
       ['tender_overview',    'ALTER TABLE tenders ADD COLUMN tender_overview JSON NULL'],
       ['l1_scope_of_work',   'ALTER TABLE tenders ADD COLUMN l1_scope_of_work TEXT NULL'],
       ['l1_analysis_source', "ALTER TABLE tenders ADD COLUMN l1_analysis_source ENUM('documents','metadata_only') NOT NULL DEFAULT 'metadata_only'"],
+      ['bid_status',            "ALTER TABLE tenders ADD COLUMN bid_status ENUM('assigned','bid_prepared','bid_submitted','tender_awarded','tender_lost','no_bid') NULL"],
+      ['bid_status_updated_at', 'ALTER TABLE tenders ADD COLUMN bid_status_updated_at TIMESTAMP NULL'],
+      ['bid_status_updated_by', 'ALTER TABLE tenders ADD COLUMN bid_status_updated_by VARCHAR(255) NULL'],
+      ['bid_amount',            'ALTER TABLE tenders ADD COLUMN bid_amount DECIMAL(15,2) NULL'],
+      ['bid_submitted_at',      'ALTER TABLE tenders ADD COLUMN bid_submitted_at TIMESTAMP NULL'],
     ];
 
     // ── users table columns ───────────────────────────────────────────────
