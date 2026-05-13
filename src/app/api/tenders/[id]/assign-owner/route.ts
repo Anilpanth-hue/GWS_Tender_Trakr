@@ -173,6 +173,11 @@ function buildAssignmentEmail(
   analysisUrl: string,
   detailUrl: string
 ): string {
+  // Derive org name from sender's email domain: "rajeev@glasswing.in" → "Glasswing"
+  const domainPart = senderEmail.split('@')[1] ?? '';
+  const orgName = domainPart.split('.')[0];
+  const orgDisplay = orgName.charAt(0).toUpperCase() + orgName.slice(1);
+
   const dueDate = tender.due_date
     ? new Date(tender.due_date as string).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : '—';
@@ -210,7 +215,7 @@ function buildAssignmentEmail(
 
   <!-- Header -->
   <div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:24px 28px;border-radius:12px 12px 0 0">
-    <p style="margin:0;color:rgba(255,255,255,0.75);font-size:12px;text-transform:uppercase;letter-spacing:0.05em">GlassWing Solutions — Internal</p>
+    <p style="margin:0;color:rgba(255,255,255,0.75);font-size:12px;text-transform:uppercase;letter-spacing:0.05em">${orgDisplay} — Internal</p>
     <h1 style="margin:6px 0 0;color:#fff;font-size:22px;font-weight:700">📋 Tender Assignment</h1>
   </div>
 
@@ -279,7 +284,7 @@ function buildAssignmentEmail(
     <p style="margin:0;border-top:1px solid #e2e8f0;padding-top:20px;font-size:13px">
       Best regards,<br>
       <strong>${senderName}</strong><br>
-      <span style="color:#64748b">GlassWing Solutions</span>
+      <span style="color:#64748b">${orgDisplay}</span>
     </p>
   </div>
 </div>`;
