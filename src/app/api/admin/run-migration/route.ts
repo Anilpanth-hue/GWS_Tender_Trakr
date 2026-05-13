@@ -26,7 +26,9 @@ export async function POST() {
            'tender_overview', 'l1_scope_of_work', 'l1_analysis_source',
            'bid_status', 'bid_status_updated_at', 'bid_status_updated_by',
            'bid_amount', 'bid_submitted_at',
-           'rejected_reason', 'bid_evaluated_remark', 'bid_dropped_reason'
+           'rejected_reason', 'bid_evaluated_remark', 'bid_dropped_reason',
+           'bid_participated_remark', 'award_remark',
+           'l1_bidder', 'l1_price', 'l2_bidder', 'l2_price', 'l3_bidder', 'l3_price'
          )`
     );
     const has = new Set(existing.map(r => r.COLUMN_NAME));
@@ -47,7 +49,15 @@ export async function POST() {
       ['bid_submitted_at',      'ALTER TABLE tenders ADD COLUMN bid_submitted_at TIMESTAMP NULL'],
       ['rejected_reason',       'ALTER TABLE tenders ADD COLUMN rejected_reason TEXT NULL'],
       ['bid_evaluated_remark',  'ALTER TABLE tenders ADD COLUMN bid_evaluated_remark TEXT NULL'],
-      ['bid_dropped_reason',    'ALTER TABLE tenders ADD COLUMN bid_dropped_reason TEXT NULL'],
+      ['bid_dropped_reason',       'ALTER TABLE tenders ADD COLUMN bid_dropped_reason TEXT NULL'],
+      ['bid_participated_remark',  'ALTER TABLE tenders ADD COLUMN bid_participated_remark TEXT NULL'],
+      ['award_remark',             'ALTER TABLE tenders ADD COLUMN award_remark TEXT NULL'],
+      ['l1_bidder',                'ALTER TABLE tenders ADD COLUMN l1_bidder VARCHAR(500) NULL'],
+      ['l1_price',                 'ALTER TABLE tenders ADD COLUMN l1_price VARCHAR(100) NULL'],
+      ['l2_bidder',                'ALTER TABLE tenders ADD COLUMN l2_bidder VARCHAR(500) NULL'],
+      ['l2_price',                 'ALTER TABLE tenders ADD COLUMN l2_price VARCHAR(100) NULL'],
+      ['l3_bidder',                'ALTER TABLE tenders ADD COLUMN l3_bidder VARCHAR(500) NULL'],
+      ['l3_price',                 'ALTER TABLE tenders ADD COLUMN l3_price VARCHAR(100) NULL'],
     ];
 
     // ── users table columns ───────────────────────────────────────────────
