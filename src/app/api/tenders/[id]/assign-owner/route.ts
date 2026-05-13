@@ -179,7 +179,7 @@ FORMATTING:
         message: {
           subject: emailSubject,
           body: {
-            contentType: 'HTML',
+            contentType: 'html',
             content: emailHtml,
           },
           toRecipients: [
