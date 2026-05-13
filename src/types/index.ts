@@ -102,6 +102,7 @@ export interface Tender {
   bidEvaluatedRemark: string | null;
   bidDroppedReason: string | null;
   bidParticipatedRemark: string | null;
+  bidAmount: string | null;
   awardRemark: string | null;
   l1Bidder: string | null;
   l1Price: string | null;

@@ -50,6 +50,7 @@ function mapTender(row: Record<string, unknown>): Tender {
     bidEvaluatedRemark: (row.bid_evaluated_remark as string) || null,
     bidDroppedReason: (row.bid_dropped_reason as string) || null,
     bidParticipatedRemark: (row.bid_participated_remark as string) || null,
+    bidAmount: (row.bid_amount as string) || null,
     awardRemark: (row.award_remark as string) || null,
     l1Bidder: (row.l1_bidder as string) || null,
     l1Price: (row.l1_price as string) || null,

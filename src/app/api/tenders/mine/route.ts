@@ -29,7 +29,7 @@ export async function GET() {
               owner_email, owner_assigned_at, assigned_by_email, assigned_by_name,
               bid_status, bid_status_updated_at, bid_status_updated_by,
               rejected_reason, bid_evaluated_remark, bid_dropped_reason,
-              bid_participated_remark, award_remark,
+              bid_participated_remark, bid_amount, award_remark,
               l1_bidder, l1_price, l2_bidder, l2_price, l3_bidder, l3_price,
               created_at, updated_at
        FROM tenders
@@ -75,6 +75,7 @@ export async function GET() {
       bidEvaluatedRemark: (t.bid_evaluated_remark as string) || null,
       bidDroppedReason: (t.bid_dropped_reason as string) || null,
       bidParticipatedRemark: (t.bid_participated_remark as string) || null,
+      bidAmount: (t.bid_amount as string) || null,
       awardRemark: (t.award_remark as string) || null,
       l1Bidder: (t.l1_bidder as string) || null,
       l1Price: (t.l1_price as string) || null,

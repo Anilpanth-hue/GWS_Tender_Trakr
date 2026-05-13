@@ -32,6 +32,7 @@ export async function PATCH(
   const body = await req.json() as {
     status?: string;
     remark?: string;
+    bidAmount?: string;
     // L1/L2/L3 bidder info (only when filling award details)
     l1Bidder?: string; l1Price?: string;
     l2Bidder?: string; l2Price?: string;
@@ -94,10 +95,21 @@ export async function PATCH(
   };
 
   const col = remarkCol[newStatus];
-  await execute(
-    `UPDATE tenders SET bid_status=?, ${col}=?, bid_status_updated_at=NOW(), bid_status_updated_by=?, updated_at=NOW() WHERE id=?`,
-    [newStatus, body.remark?.trim() || null, session.user.email, id]
-  );
+  const bidAmountVal = (newStatus === 'bid_participated' && body.bidAmount?.trim())
+    ? body.bidAmount.trim()
+    : null;
+
+  if (bidAmountVal !== null) {
+    await execute(
+      `UPDATE tenders SET bid_status=?, ${col}=?, bid_amount=?, bid_submitted_at=NOW(), bid_status_updated_at=NOW(), bid_status_updated_by=?, updated_at=NOW() WHERE id=?`,
+      [newStatus, body.remark?.trim() || null, bidAmountVal, session.user.email, id]
+    );
+  } else {
+    await execute(
+      `UPDATE tenders SET bid_status=?, ${col}=?, bid_status_updated_at=NOW(), bid_status_updated_by=?, updated_at=NOW() WHERE id=?`,
+      [newStatus, body.remark?.trim() || null, session.user.email, id]
+    );
+  }
 
   return NextResponse.json<ApiResponse>({ message: `Status updated to "${newStatus}".` });
 }

@@ -65,6 +65,7 @@ export async function GET(
       bidEvaluatedRemark: (tender.bid_evaluated_remark as string) || null,
       bidDroppedReason: (tender.bid_dropped_reason as string) || null,
       bidParticipatedRemark: (tender.bid_participated_remark as string) || null,
+      bidAmount: (tender.bid_amount as string) || null,
       awardRemark: (tender.award_remark as string) || null,
       l1Bidder: (tender.l1_bidder as string) || null,
       l1Price: (tender.l1_price as string) || null,

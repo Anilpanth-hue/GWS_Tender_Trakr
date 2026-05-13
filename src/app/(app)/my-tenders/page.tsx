@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -8,7 +8,7 @@ import {
   Bookmark, CheckCircle2, Clock, Building2, Calendar,
   IndianRupee, ArrowUpRight, UserCircle, AlertCircle,
   TrendingUp, ShieldCheck, ChevronRight, X, Trophy,
-  XCircle, MinusCircle, Loader2, ClipboardEdit,
+  XCircle, MinusCircle, Loader2, ClipboardEdit, Search,
 } from 'lucide-react';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import type { Tender, BidStatus } from '@/types';
@@ -149,6 +149,15 @@ function PipelineBar({ status }: { status: BidStatus | null }) {
 
 // ── Update Status Modal ────────────────────────────────────────────────────────
 
+const REMARK_LABEL: Record<string, { label: string; required: boolean; placeholder: string }> = {
+  rejected:         { label: 'Rejection Reason',  required: true,  placeholder: 'Why is this tender being rejected?' },
+  bid_dropped:      { label: 'Drop Reason',        required: true,  placeholder: 'Why was the bid dropped?' },
+  not_awarded:      { label: 'Remark',             required: true,  placeholder: 'e.g. Lost to L1 bidder at lower price' },
+  bid_evaluated:    { label: 'Evaluation Remark',  required: false, placeholder: 'Any notes on the bid evaluation… (optional)' },
+  bid_participated: { label: 'Bid Remark',         required: false, placeholder: 'e.g. Submitted bid at ₹4.2 Cr… (optional)' },
+  tender_awarded:   { label: 'Award Remark',       required: false, placeholder: 'Notes on the award… (optional)' },
+};
+
 function UpdateModal({ tender, onClose, onUpdated }: {
   tender: Tender;
   onClose: () => void;
@@ -156,19 +165,26 @@ function UpdateModal({ tender, onClose, onUpdated }: {
 }) {
   const actions = getNextActions(tender.bidStatus);
   const [selected, setSelected] = useState<NextAction | null>(actions[0] ?? null);
-  const [remark, setRemark] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [remark, setRemark]     = useState('');
+  const [bidAmount, setBidAmount] = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState('');
+
+  const remarkCfg = selected ? REMARK_LABEL[selected.status] : null;
 
   async function submit() {
     if (!selected) return;
-    if (selected.isTerminal && !remark.trim()) { setError('Reason is required.'); return; }
+    if (remarkCfg?.required && !remark.trim()) { setError(`${remarkCfg.label} is required.`); return; }
     setSaving(true); setError('');
     try {
       const res = await fetch(`/api/tenders/${tender.id}/bid-status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: selected.status, remark: remark.trim() || undefined }),
+        body: JSON.stringify({
+          status: selected.status,
+          remark: remark.trim() || undefined,
+          bidAmount: bidAmount.trim() || undefined,
+        }),
       });
       const json = await res.json();
       if (json.error) { setError(json.error); setSaving(false); return; }
@@ -208,7 +224,7 @@ function UpdateModal({ tender, onClose, onUpdated }: {
             <p className="text-[11.5px] font-semibold mb-2" style={{ color: '#334155' }}>Next Action</p>
             <div className="space-y-2">
               {actions.map(action => (
-                <button key={action.status} onClick={() => setSelected(action)}
+                <button key={action.status} onClick={() => { setSelected(action); setRemark(''); setBidAmount(''); setError(''); }}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all"
                   style={{
                     border: `2px solid ${selected?.status === action.status ? action.color : '#e2e8f0'}`,
@@ -219,8 +235,7 @@ function UpdateModal({ tender, onClose, onUpdated }: {
                     {action.label}
                   </span>
                   {selected?.status === action.status && (
-                    <div className="w-4 h-4 rounded-full flex items-center justify-center"
-                      style={{ background: action.color }}>
+                    <div className="w-4 h-4 rounded-full flex items-center justify-center" style={{ background: action.color }}>
                       <CheckCircle2 className="w-3 h-3 text-white" />
                     </div>
                   )}
@@ -229,25 +244,38 @@ function UpdateModal({ tender, onClose, onUpdated }: {
             </div>
           </div>
 
-          {/* Reason — only shown for terminal (reject/drop/not-awarded) actions */}
-          {selected?.isTerminal && (
+          {/* Bid amount — shown when marking bid participated */}
+          {selected?.status === 'bid_participated' && (
             <div>
               <label className="text-[11.5px] font-semibold mb-1.5 block" style={{ color: '#334155' }}>
-                Reason <span style={{ color: '#dc2626' }}>*</span>
+                Our Bid Amount <span style={{ color: '#94a3b8' }}>(optional)</span>
+              </label>
+              <input
+                value={bidAmount}
+                onChange={e => setBidAmount(e.target.value)}
+                placeholder="e.g. ₹4.2 Cr or 4,20,00,000"
+                className="w-full rounded-xl px-3.5 py-2.5 text-[13px] outline-none"
+                style={{ border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#0f172a' }}
+              />
+            </div>
+          )}
+
+          {/* Remark — shown for all transitions */}
+          {remarkCfg && (
+            <div>
+              <label className="text-[11.5px] font-semibold mb-1.5 block" style={{ color: '#334155' }}>
+                {remarkCfg.label}
+                {remarkCfg.required
+                  ? <span style={{ color: '#dc2626' }}> *</span>
+                  : <span style={{ color: '#94a3b8' }}> (optional)</span>}
               </label>
               <textarea
                 value={remark}
                 onChange={e => { setRemark(e.target.value); setError(''); }}
                 rows={3}
-                placeholder="Enter the reason…"
+                placeholder={remarkCfg.placeholder}
                 className="w-full rounded-xl px-3.5 py-2.5 text-[13px] resize-none outline-none transition-all"
-                style={{
-                  border: `1.5px solid ${error ? '#dc2626' : '#e2e8f0'}`,
-                  background: '#f8fafc',
-                  color: '#0f172a',
-                }}
-                onFocus={e => (e.target.style.borderColor = '#dc2626')}
-                onBlur={e => (e.target.style.borderColor = error ? '#dc2626' : '#e2e8f0')}
+                style={{ border: `1.5px solid ${error ? '#dc2626' : '#e2e8f0'}`, background: '#f8fafc', color: '#0f172a' }}
               />
               {error && <p className="text-[11.5px] mt-1" style={{ color: '#dc2626' }}>{error}</p>}
             </div>
@@ -256,18 +284,12 @@ function UpdateModal({ tender, onClose, onUpdated }: {
 
         {/* Footer */}
         <div className="px-5 pb-5 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all"
-            style={{ background: '#f1f5f9', color: '#64748b' }}>
-            Cancel
-          </button>
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold"
+            style={{ background: '#f1f5f9', color: '#64748b' }}>Cancel</button>
           <button onClick={submit} disabled={saving || !selected}
-            className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold flex items-center justify-center gap-2 transition-all"
-            style={{
-              background: selected?.color || '#7c3aed',
-              color: '#fff',
-              opacity: saving ? 0.7 : 1,
-            }}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold flex items-center justify-center gap-2"
+            style={{ background: selected?.color || '#7c3aed', color: '#fff', opacity: saving ? 0.7 : 1 }}>
+            {saving && <Loader2 className="w-4 h-4 animate-spin" />}
             {saving ? 'Saving…' : 'Confirm'}
           </button>
         </div>
@@ -560,12 +582,33 @@ function TenderCard({ tender, index, onStatusUpdated, isAdmin }: {
             <PipelineBar status={tender.bidStatus} />
           </div>
 
-          {/* Remark for terminal states */}
+          {/* Remarks / notes per status */}
           {tender.bidStatus === 'rejected' && tender.rejectedReason && (
             <div className="mt-2 px-3.5 py-2.5 rounded-xl" style={{ background: 'rgba(220,38,38,0.04)', border: '1px solid rgba(220,38,38,0.1)' }}>
               <p className="text-[11.5px]" style={{ color: '#dc2626' }}>
                 <span className="font-semibold">Rejection reason:</span> {tender.rejectedReason}
               </p>
+            </div>
+          )}
+          {tender.bidStatus === 'bid_evaluated' && tender.bidEvaluatedRemark && (
+            <div className="mt-2 px-3.5 py-2.5 rounded-xl" style={{ background: 'rgba(124,58,237,0.04)', border: '1px solid rgba(124,58,237,0.12)' }}>
+              <p className="text-[11.5px]" style={{ color: '#7c3aed' }}>
+                <span className="font-semibold">Evaluation note:</span> {tender.bidEvaluatedRemark}
+              </p>
+            </div>
+          )}
+          {tender.bidStatus === 'bid_participated' && (
+            <div className="mt-2 px-3.5 py-2.5 rounded-xl space-y-1" style={{ background: 'rgba(2,132,199,0.04)', border: '1px solid rgba(2,132,199,0.12)' }}>
+              {tender.bidAmount && (
+                <p className="text-[11.5px]" style={{ color: '#0284c7' }}>
+                  <span className="font-semibold">Our bid:</span> {tender.bidAmount}
+                </p>
+              )}
+              {tender.bidParticipatedRemark && (
+                <p className="text-[11.5px]" style={{ color: '#0284c7' }}>
+                  <span className="font-semibold">Remark:</span> {tender.bidParticipatedRemark}
+                </p>
+              )}
             </div>
           )}
           {tender.bidStatus === 'bid_dropped' && tender.bidDroppedReason && (
@@ -581,6 +624,14 @@ function TenderCard({ tender, index, onStatusUpdated, isAdmin }: {
                 <span className="font-semibold">Remark:</span> {tender.awardRemark}
               </p>
             </div>
+          )}
+
+          {/* Updated-by / when */}
+          {tender.bidStatusUpdatedBy && tender.bidStatus && tender.bidStatus !== 'assigned' && (
+            <p className="text-[10.5px] mt-2" style={{ color: '#94a3b8' }}>
+              Last updated by <span className="font-medium">{tender.bidStatusUpdatedBy}</span>
+              {tender.bidStatusUpdatedAt && ` · ${formatDate(tender.bidStatusUpdatedAt)}`}
+            </p>
           )}
 
           {/* Bidder details if awarded */}
@@ -619,11 +670,15 @@ function TenderCard({ tender, index, onStatusUpdated, isAdmin }: {
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
+type FilterTab = 'all' | 'active' | 'awarded' | 'closed';
+
 export default function MyTendersPage() {
   const { data: session } = useSession();
   const [tenders, setTenders] = useState<Tender[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterTab>('all');
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -645,12 +700,31 @@ export default function MyTendersPage() {
   const active    = tenders.filter(t => !TERMINAL.includes(t.bidStatus as BidStatus)).length;
   const terminal  = tenders.filter(t => TERMINAL.includes(t.bidStatus as BidStatus)).length;
 
+  const filtered = useMemo(() => {
+    let list = tenders;
+    if (filter === 'active')  list = list.filter(t => !TERMINAL.includes(t.bidStatus as BidStatus));
+    if (filter === 'awarded') list = list.filter(t => t.bidStatus === 'tender_awarded');
+    if (filter === 'closed')  list = list.filter(t => TERMINAL.includes(t.bidStatus as BidStatus) && t.bidStatus !== 'tender_awarded');
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(t => t.title.toLowerCase().includes(q) || (t.issuedBy || '').toLowerCase().includes(q));
+    }
+    return list;
+  }, [tenders, filter, search]);
+
+  const tabs: { key: FilterTab; label: string; count: number }[] = [
+    { key: 'all',     label: 'All',         count: tenders.length },
+    { key: 'active',  label: 'In Progress', count: active },
+    { key: 'awarded', label: 'Awarded',     count: awarded },
+    { key: 'closed',  label: 'Closed',      count: terminal - awarded },
+  ];
+
   return (
     <div className="px-8 py-8 max-w-4xl mx-auto">
 
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}
-        className="mb-8">
+        className="mb-6">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-9 h-9 rounded-[12px] flex items-center justify-center flex-shrink-0"
             style={{ background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)' }}>
@@ -665,22 +739,50 @@ export default function MyTendersPage() {
         </div>
       </motion.div>
 
-      {/* Stats */}
+      {/* Filter tabs + Search */}
       {!loading && tenders.length > 0 && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}
-          className="flex gap-4 mb-6">
-          {[
-            { label: 'Assigned',     value: tenders.length, color: '#7c3aed' },
-            { label: 'In Progress',  value: active,          color: '#0284c7' },
-            { label: 'Awarded',      value: awarded,         color: '#16a34a' },
-            { label: 'Closed',       value: terminal - awarded, color: '#94a3b8' },
-          ].map(({ label, value, color }) => (
-            <div key={label} className="rounded-xl px-4 py-2.5 flex items-center gap-2.5"
-              style={{ background: '#ffffff', border: '1px solid #e2e8f0' }}>
-              <span className="text-[18px] font-bold" style={{ color }}>{value}</span>
-              <span className="text-[12px]" style={{ color: '#94a3b8' }}>{label}</span>
-            </div>
-          ))}
+          className="flex flex-wrap items-center gap-3 mb-5">
+
+          {/* Tabs */}
+          <div className="flex gap-1 p-1 rounded-xl" style={{ background: '#f1f5f9' }}>
+            {tabs.map(tab => (
+              <button key={tab.key} onClick={() => setFilter(tab.key)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[12.5px] font-semibold transition-all"
+                style={{
+                  background: filter === tab.key ? '#fff' : 'transparent',
+                  color: filter === tab.key ? '#7c3aed' : '#64748b',
+                  boxShadow: filter === tab.key ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                }}>
+                {tab.label}
+                <span className="text-[10.5px] px-1.5 py-0.5 rounded-full font-bold"
+                  style={{
+                    background: filter === tab.key ? 'rgba(124,58,237,0.1)' : 'rgba(100,116,139,0.1)',
+                    color: filter === tab.key ? '#7c3aed' : '#94a3b8',
+                  }}>
+                  {tab.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Search */}
+          <div className="flex-1 min-w-[200px] relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: '#94a3b8' }} />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by title or department…"
+              className="w-full pl-9 pr-3.5 py-2 rounded-xl text-[12.5px] outline-none"
+              style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#0f172a' }}
+            />
+            {search && (
+              <button onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-100">
+                <X className="w-3 h-3" style={{ color: '#94a3b8' }} />
+              </button>
+            )}
+          </div>
         </motion.div>
       )}
 
@@ -717,11 +819,20 @@ export default function MyTendersPage() {
 
       {/* Tender list */}
       {!loading && !error && tenders.length > 0 && (
-        <div className="space-y-4">
-          {tenders.map((tender, i) => (
-            <TenderCard key={tender.id} tender={tender} index={i} onStatusUpdated={load} isAdmin={session?.user?.role === 'admin'} />
-          ))}
-        </div>
+        <>
+          {filtered.length === 0 ? (
+            <div className="text-center py-16">
+              <p className="text-[14px] font-semibold mb-1" style={{ color: '#334155' }}>No matching tenders</p>
+              <p className="text-[12.5px]" style={{ color: '#94a3b8' }}>Try a different filter or search term.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filtered.map((tender, i) => (
+                <TenderCard key={tender.id} tender={tender} index={i} onStatusUpdated={load} isAdmin={session?.user?.role === 'admin'} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
