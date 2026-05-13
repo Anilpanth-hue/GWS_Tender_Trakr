@@ -180,6 +180,14 @@ function PreviewPanel({
     }
   }
 
+  // Auto-fetch when panel opens and completionPeriod is missing
+  useEffect(() => {
+    if (!overview?.completionPeriod) {
+      handleRefreshOverview();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tender.id]);
+
   // Derive description from title: split at " - " to get readable parts
   const titleParts = tender.title.split(/\s+-\s+/);
   const derivedDescription =

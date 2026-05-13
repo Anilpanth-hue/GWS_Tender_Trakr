@@ -235,7 +235,7 @@ function DocumentsPanel({ tenderId, detailUrl }: { tenderId: number; detailUrl: 
               </div>
               {summaryPdf.filePath && (
                 <a
-                  href={summaryPdf.filePath}
+                  href={`/api/tenders/${tenderId}/documents/${summaryPdf.id}/download`}
                   download={summaryPdf.fileName}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11.5px] font-semibold transition-opacity hover:opacity-80"
                   style={{ background: 'rgba(2,132,199,0.08)', border: '1px solid rgba(2,132,199,0.2)', color: '#0284c7' }}
@@ -262,7 +262,7 @@ function DocumentsPanel({ tenderId, detailUrl }: { tenderId: number; detailUrl: 
                 </div>
               </div>
               <a
-                href={doc.filePath!}
+                href={`/api/tenders/${tenderId}/documents/${doc.id}/download`}
                 download={doc.fileName}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11.5px] font-semibold transition-opacity hover:opacity-80"
                 style={{ background: 'rgba(22,163,74,0.08)', border: '1px solid rgba(22,163,74,0.2)', color: '#16a34a' }}

@@ -116,7 +116,12 @@ export async function POST(
           // Legacy HTTP URL path — try to download via Node (may fail if cookies required)
           const localPath = await downloadFile(doc.url, tender.id, doc.label);
           if (localPath) {
-            const publicPath = localPath.replace(process.cwd() + '\\public', '').replace(/\\/g, '/');
+            // Normalize to public-relative URL path, works on both Windows and Linux
+            const publicDir = process.cwd().replace(/\\/g, '/') + '/public';
+            const normalized = localPath.replace(/\\/g, '/');
+            const publicPath = normalized.startsWith(publicDir)
+              ? normalized.slice(publicDir.length)
+              : '/' + normalized.split('/public/').slice(1).join('/public/');
             await execute(
               `UPDATE tender_documents SET file_path = ? WHERE id = ?`,
               [publicPath, ins.insertId]
