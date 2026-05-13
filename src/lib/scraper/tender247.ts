@@ -1248,6 +1248,7 @@ export async function fetchDetailPageData(
     await new Promise(r => setTimeout(r, 500));
     await page.evaluate(() => window.scrollTo(0, 0));
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { title: _t, bidValueRaw: _b, dueDate: _d, issuedBy: _i, location: _l, ...rawOverview } =
       await extractTenderDetailPage(page, t247Id);
 
@@ -1320,6 +1321,7 @@ export async function fetchOverviewByDetailUrl(
     const emdFromApi = apiCapture.emdFormatted || (apiCapture.emdRaw ? formatEmdRaw(apiCapture.emdRaw) : '');
     const periodFromApi = apiCapture.contractPeriod || apiCapture.completionPeriod || '';
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { title: _t, bidValueRaw, dueDate, issuedBy: _i, location: _l, ...rawOverview } = rawPageData;
     const overview: SingleTenderResult['overview'] = {
       ...rawOverview,

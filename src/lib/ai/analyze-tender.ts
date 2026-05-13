@@ -1,6 +1,7 @@
 ﻿// This file must only run on the server (Node.js). Never import it in client components.
 
 import * as fs from 'fs';
+import * as path from 'path';
 import type { TenderL2Analysis } from '@/types';
 
 // ── Lazy Genkit init ──────────────────────────────────────────────────────────
@@ -260,11 +261,11 @@ export async function analyzeTenderL2(
       (skipped > 0 ? ` — ${skipped} skipped (size limit)` : '')
     );
     selected.forEach((p, i) =>
-      console.log(`  [${i + 1}] ${require('path').basename(p)} (${Math.round(fs.statSync(p).size / 1024)}KB)`)
+      console.log(`  [${i + 1}] ${path.basename(p)} (${Math.round(fs.statSync(p).size / 1024)}KB)`)
     );
 
     const fileList = selected
-      .map((p, i) => `  Document ${i + 1}: ${require('path').basename(p)} (${Math.round(fs.statSync(p).size / 1024)}KB)`)
+      .map((p, i) => `  Document ${i + 1}: ${path.basename(p)} (${Math.round(fs.statSync(p).size / 1024)}KB)`)
       .join('\n');
     const skippedNote = skipped > 0 ? `\n  (${skipped} additional large file(s) omitted due to size limit)` : '';
     const pdfContentNote = [

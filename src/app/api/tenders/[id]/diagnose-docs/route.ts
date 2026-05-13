@@ -64,9 +64,8 @@ export async function POST(
       await new Promise(r => setTimeout(r, 2000));
 
       // Screenshot — saved to public folder so it's accessible in browser
-      const fs = await import('fs');
-      const path = await import('path');
-      const screenshotPath = path.join(process.cwd(), 'public', 'debug-screenshot.png');
+      const { join } = await import('path');
+      const screenshotPath = join(process.cwd(), 'public', 'debug-screenshot.png');
       await page.screenshot({ path: screenshotPath, fullPage: true });
       console.log(`[Diagnose] Screenshot saved to ${screenshotPath}`);
       console.log(`[Diagnose] View at: http://localhost:3000/debug-screenshot.png`);
