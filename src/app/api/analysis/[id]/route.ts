@@ -27,6 +27,26 @@ function isGarbageText(text: string): boolean {
   return isMetaResponse && !hasRealData;
 }
 
+/**
+ * Resolve a stored file_path to an absolute disk path, handling two forms:
+ *  (a) /documents/100/file.zip  — correct public-relative path
+ *  (b) /opt/apps/.../public/documents/100/file.zip  — absolute path (Windows path bug)
+ */
+function resolveFilePath(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/');
+  // If it already looks like a public-relative path, just join with cwd/public
+  if (normalized.startsWith('/documents/') || normalized.startsWith('documents/')) {
+    return path.resolve(process.cwd(), 'public', normalized.replace(/^\//, ''));
+  }
+  // Absolute path — extract the part after /public/
+  const pubIdx = normalized.indexOf('/public/');
+  if (pubIdx !== -1) {
+    return path.resolve(process.cwd(), 'public', normalized.slice(pubIdx + '/public/'.length));
+  }
+  // Fallback: try to join directly (may not exist)
+  return path.resolve(process.cwd(), 'public', normalized.replace(/^\//, ''));
+}
+
 /** Returns true only if the file on disk starts with %PDF magic bytes */
 function isRealPdf(filePath: string): boolean {
   try {
@@ -82,7 +102,7 @@ export async function POST(
     // Pass 1: individual PDF files directly stored on disk
     for (const row of docRows) {
       if (!row.file_path) continue;
-      const abs = path.resolve(process.cwd(), 'public', row.file_path.replace(/^\//, ''));
+      const abs = resolveFilePath(row.file_path);
       if (!abs.endsWith('.pdf') || !fs.existsSync(abs)) continue;
       if (isRealPdf(abs)) {
         realPdfPaths.push(abs);
@@ -96,7 +116,7 @@ export async function POST(
     // Pass 2: extract ALL PDFs from every ZIP (including nested folders)
     for (const row of docRows) {
       if (!row.file_path) continue;
-      const abs = path.resolve(process.cwd(), 'public', row.file_path.replace(/^\//, ''));
+      const abs = resolveFilePath(row.file_path);
       if (!abs.endsWith('.zip') || !fs.existsSync(abs)) continue;
 
       const extractDir = abs.slice(0, -4) + '_extracted';
