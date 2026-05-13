@@ -438,6 +438,27 @@ export async function fetchTenderDocuments(
     await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 45000 });
     await new Promise(r => setTimeout(r, 3000));
 
+    // ── Auth-wall detection ──────────────────────────────────────────────────
+    // If the session is stale T247 redirects to homepage or shows a login overlay.
+    // Detect both cases and throw early so the caller can re-login and retry.
+    const finalUrl = page.url();
+    const isLoginWall = await page.evaluate(() => {
+      const bodyText = document.body?.innerText || '';
+      const onHomepage = window.location.pathname === '/' || window.location.pathname === '';
+      const hasLoginBtn = Array.from(document.querySelectorAll('button[aria-haspopup="dialog"]'))
+        .some(b => /sign\s*up|log\s*in/i.test(b.textContent || ''));
+      const hasSignInOverlay = /sign\s*in\s*to\s*unlock|login\s*to\s*view|please\s*log\s*in/i.test(bodyText);
+      return onHomepage || hasLoginBtn || hasSignInOverlay;
+    });
+
+    if (isLoginWall) {
+      throw new Error(
+        `Session expired — T247 redirected to login wall (current URL: ${finalUrl}). ` +
+        `Please trigger a fresh fetch or use "Fetch Documents" again to re-login.`
+      );
+    }
+    console.log(`[Fetcher] #${tenderId} ✓ Page loaded and authenticated, URL: ${finalUrl}`);
+
     // Scroll to trigger lazy-loaded Tender Documents section
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await new Promise(r => setTimeout(r, 2000));

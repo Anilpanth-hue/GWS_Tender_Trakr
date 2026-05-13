@@ -61,6 +61,10 @@ export async function POST(
     const { loginBrowser, fetchTenderDocuments, closeBrowser } = await import('@/lib/scraper/tender247');
     const { downloadFile } = await import('@/lib/pdf/extract');
 
+    // Always close the existing browser singleton before starting fresh.
+    // Reusing a stale browser means session cookies may have expired (T247 sessions
+    // typically last 2-3 days), causing silent auth failures inside fetchTenderDocuments.
+    await closeBrowser();
     const browser = await loginBrowser(email, password);
     let savedCount = 0;
 

@@ -44,6 +44,7 @@ export async function POST(
     console.log(`[Diagnose] Starting for tender #${id}, URL: ${tender.detail_url}`);
 
     const { loginBrowser, closeBrowser } = await import('@/lib/scraper/tender247');
+    await closeBrowser(); // force fresh browser — stale sessions cause silent auth failures
     const browser = await loginBrowser(settings.tender247_email, settings.tender247_password);
     const page = await browser.newPage();
 
