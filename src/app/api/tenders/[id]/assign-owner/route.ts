@@ -187,43 +187,43 @@ function buildAssignmentEmail(
     ? Math.ceil((new Date(tender.due_date as string).getTime() - Date.now()) / 86400000)
     : null;
   const urgentBanner = daysUntilDue !== null && daysUntilDue <= 14
-    ? `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px 16px;margin-bottom:20px;color:#b91c1c;font-size:13px;font-weight:600">
-        ⚠️ Due in ${daysUntilDue} day${daysUntilDue === 1 ? '' : 's'} — please act urgently.
+    ? `<div style="background:#fff0f0;border:1px solid #cc0000;border-radius:4px;padding:12px 16px;margin-bottom:20px;color:#cc0000;font-size:13px;font-weight:600">
+        &#9888; Due in ${daysUntilDue} day${daysUntilDue === 1 ? '' : 's'} — please act urgently.
        </div>`
     : '';
 
   const aiRows = [
     l2.recommendedAction ? `
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">AI Recommendation</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:700;color:#7c3aed">${l2.recommendedAction}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;background:#f5f5f5;border-bottom:1px solid #cccccc;width:160px">AI Recommendation</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #cccccc;font-weight:700;color:#000000">${l2.recommendedAction}</td>
       </tr>` : '',
     l2.gwsRelevanceScore ? `
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;width:160px">Relevance Score</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${l2.gwsRelevanceScore}/10</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;border-bottom:1px solid #cccccc;width:160px">Relevance Score</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #cccccc;color:#000000">${l2.gwsRelevanceScore}/10</td>
       </tr>` : '',
     l2.winProbabilityAssessment ? `
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">Win Probability</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${l2.winProbabilityAssessment.split('—')[0].trim()}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;background:#f5f5f5;border-bottom:1px solid #cccccc;width:160px">Win Probability</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #cccccc;color:#000000">${l2.winProbabilityAssessment.split('—')[0].trim()}</td>
       </tr>` : '',
   ].filter(Boolean).join('');
 
   return `
-<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1e293b">
+<div style="font-family:Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#000000">
 
   <!-- Header -->
   <div style="background:linear-gradient(135deg,#7c3aed,#4f46e5);padding:24px 28px;border-radius:12px 12px 0 0">
-    <p style="margin:0;color:rgba(255,255,255,0.75);font-size:12px;text-transform:uppercase;letter-spacing:0.05em">${orgDisplay} — Internal</p>
-    <h1 style="margin:6px 0 0;color:#fff;font-size:22px;font-weight:700">📋 Tender Assignment</h1>
+    <p style="margin:0;color:#ffffff;font-size:12px;text-transform:uppercase;letter-spacing:0.05em">${orgDisplay} — Internal</p>
+    <h1 style="margin:6px 0 0;color:#ffffff;font-size:22px;font-weight:700">📋 Tender Assignment</h1>
   </div>
 
   <!-- Body -->
-  <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;border-radius:0 0 12px 12px;padding:28px 32px">
+  <div style="background:#ffffff;border:1px solid #cccccc;border-top:none;border-radius:0 0 12px 12px;padding:28px 32px">
 
-    <p style="margin:0 0 6px">Dear <strong>${assigneeName}</strong>,</p>
-    <p style="margin:0 0 20px;color:#475569">
+    <p style="margin:0 0 6px;color:#000000">Dear <strong>${assigneeName}</strong>,</p>
+    <p style="margin:0 0 20px;color:#000000">
       <strong>${senderName}</strong> (<a href="mailto:${senderEmail}" style="color:#7c3aed">${senderEmail}</a>) has assigned the following tender to you for review and follow-up.
       Please go through the details and the AI analysis at the earliest.
     </p>
@@ -231,30 +231,30 @@ function buildAssignmentEmail(
     ${urgentBanner}
 
     <!-- Tender details table -->
-    <table style="width:100%;border-collapse:collapse;margin:0 0 24px;font-size:13px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+    <table style="width:100%;border-collapse:collapse;margin:0 0 24px;font-size:13px;border:1px solid #cccccc">
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">Title</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:600">${tender.title}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;background:#f5f5f5;border-bottom:1px solid #cccccc;width:160px">Title</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #cccccc;font-weight:600;color:#000000">${tender.title}</td>
       </tr>
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;width:160px">T247 ID</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">T247-${tender.tender_no}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;border-bottom:1px solid #cccccc;width:160px">T247 ID</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #cccccc;color:#000000">T247-${tender.tender_no}</td>
       </tr>
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">Issued By</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${tender.issued_by || '—'}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;background:#f5f5f5;border-bottom:1px solid #cccccc;width:160px">Issued By</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #cccccc;color:#000000">${tender.issued_by || '—'}</td>
       </tr>
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:1px solid #e2e8f0;width:160px">Location</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0">${tender.location || '—'}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;border-bottom:1px solid #cccccc;width:160px">Location</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #cccccc;color:#000000">${tender.location || '—'}</td>
       </tr>
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;width:160px">Est. Value</td>
-        <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-weight:600;color:#0f172a">${tender.estimated_value_raw || '—'}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;background:#f5f5f5;border-bottom:1px solid #cccccc;width:160px">Est. Value</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #cccccc;font-weight:600;color:#000000">${tender.estimated_value_raw || '—'}</td>
       </tr>
       <tr>
-        <td style="padding:10px 14px;font-weight:600;color:#64748b;border-bottom:${aiRows ? '1px solid #e2e8f0' : 'none'};width:160px">Due Date</td>
-        <td style="padding:10px 14px;border-bottom:${aiRows ? '1px solid #e2e8f0' : 'none'};font-weight:600;color:${daysUntilDue !== null && daysUntilDue <= 14 ? '#b91c1c' : '#0f172a'}">${dueDate}</td>
+        <td style="padding:10px 14px;font-weight:600;color:#000000;border-bottom:${aiRows ? '1px solid #cccccc' : 'none'};width:160px">Due Date</td>
+        <td style="padding:10px 14px;border-bottom:${aiRows ? '1px solid #cccccc' : 'none'};font-weight:600;color:${daysUntilDue !== null && daysUntilDue <= 14 ? '#cc0000' : '#000000'}">${dueDate}</td>
       </tr>
       ${aiRows}
     </table>
@@ -264,27 +264,27 @@ function buildAssignmentEmail(
       <tr>
         <td style="padding:0 8px 0 0;width:50%">
           <a href="${analysisUrl}"
-             style="display:block;text-align:center;padding:12px 16px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600">
-            📊 View AI Analysis on GWS Platform
+             style="display:block;text-align:center;padding:12px 16px;background:#7c3aed;color:#ffffff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600">
+            View AI Analysis on GWS Platform
           </a>
         </td>
         <td style="padding:0 0 0 8px;width:50%">
           <a href="${detailUrl}"
-             style="display:block;text-align:center;padding:12px 16px;background:#0284c7;color:#fff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600">
-            🔗 View Tender on Tender247
+             style="display:block;text-align:center;padding:12px 16px;background:#0284c7;color:#ffffff;text-decoration:none;border-radius:8px;font-size:13px;font-weight:600">
+            View Tender on Tender247
           </a>
         </td>
       </tr>
     </table>
 
-    <p style="margin:0 0 24px;color:#475569;font-size:13px">
+    <p style="margin:0 0 24px;color:#000000;font-size:13px">
       Please review and take the necessary action. Feel free to reach out if you have any questions.
     </p>
 
-    <p style="margin:0;border-top:1px solid #e2e8f0;padding-top:20px;font-size:13px">
+    <p style="margin:0;border-top:1px solid #cccccc;padding-top:20px;font-size:13px;color:#000000">
       Best regards,<br>
       <strong>${senderName}</strong><br>
-      <span style="color:#64748b">${orgDisplay}</span>
+      ${orgDisplay}
     </p>
   </div>
 </div>`;
