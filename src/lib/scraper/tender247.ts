@@ -7,7 +7,7 @@ const BASE_URL = 'https://www.tender247.com';
 const TENDERS_URL = `${BASE_URL}/tenders`;
 
 // How many scroll steps to do when loading more items (infinite scroll)
-const MAX_SCROLL_ROUNDS = 10; // ~150 tenders max per fetch run
+const MAX_SCROLL_ROUNDS = 15; // ~200 tenders max per fetch run
 
 let browserInstance: Browser | null = null;
 
@@ -1212,7 +1212,7 @@ export async function fetchAllTenders(
   email: string,
   password: string,
   session: FetchSession = 'manual',
-  maxTenders = 100
+  maxTenders = 200
 ): Promise<RawTender[]> {
   const browser = await getBrowser();
   const page = await browser.newPage();

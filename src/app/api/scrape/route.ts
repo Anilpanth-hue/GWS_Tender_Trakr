@@ -102,13 +102,10 @@ export async function POST(req: NextRequest) {
 
         // ── Phase 2: Fast keyword pre-filter + save all tenders ─────────────────
         for (const raw of rawTenders) {
-          const [existing] = await query<{ id: number }>('SELECT id FROM tenders WHERE tender_no = ?', [raw.tenderNo]);
-          if (existing) continue;
-
           const keywordResult = screenTender(raw, DEFAULT_CONFIG);
 
           const insertResult = await execute(
-            `INSERT INTO tenders
+            `INSERT IGNORE INTO tenders
                (scrape_run_id, title, tender_no, issued_by, estimated_value, estimated_value_raw,
                 due_date, published_date, location, category, detail_url, source_session,
                 l1_status, l1_qualification_reasons, l1_exclusion_reason, l1_analysis_source)
@@ -122,6 +119,9 @@ export async function POST(req: NextRequest) {
               keywordResult.exclusionReason,
             ]
           );
+
+          // INSERT IGNORE returns insertId=0 when tender_no already exists — skip duplicates
+          if (!insertResult.insertId) continue;
 
           // Save listing-page EMD immediately — even rejected/metadata_only tenders show something
           if (raw.listingEmdValue) {
