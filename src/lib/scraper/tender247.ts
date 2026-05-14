@@ -861,7 +861,10 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
           if (val === ':') continue;
           if (val.startsWith(':')) val = val.slice(1).trim();
           const isLongField = /eligib|pre.qualif|turnover|experience|technical|financial|pqc|payment|penalty/i.test(labelText);
-          if (val && !isJunk(val) && !isReferralValue(val) && val.length > 0 && val.length < (isLongField ? 2000 : 600) && val !== labelText) {
+          // Store ALL values including referral ones ("As per Tender Document") —
+          // they're still useful (e.g. contract period "As per Tender Document" beats "—").
+          // isJunk() still filters out phone numbers and UI chrome.
+          if (val && !isJunk(val) && val.length > 0 && val.length < (isLongField ? 2000 : 600) && val !== labelText) {
             aiSummaryFields[labelText] = val;
             break;
           }
@@ -980,7 +983,13 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
     const orgTenderId      = smartLookup('Tender ID', 'Organisation Tender ID', 'Tender Reference', 'Ref No');
     const emdValue         = smartLookup('Emd Amount', 'EMD Value', 'EMD Amount', 'EMD', 'Earnest Money Deposit', 'Earnest Money');
     const documentFees     = smartLookup('Document Fee', 'Document Fees', 'Tender Fee', 'Tender Document Fee');
-    const completionPeriod = smartLookup('Contract Period', 'Completion Period', 'Work Completion Period', 'Duration', 'Time Limit', 'Period of Contract', 'Period');
+    const completionPeriod = smartLookup(
+      'Contract Period', 'Completion Period', 'Work Completion Period',
+      'Period of Contract', 'Period of Completion', 'Time for Completion',
+      'Contract Duration', 'Contract Tenure', 'Work Period', 'Works Period',
+      'Project Duration', 'Delivery Period', 'Period of Work', 'Agreement Period',
+      'Work Order Period', 'Time Period', 'Duration', 'Time Limit', 'Period'
+    );
     const contactPerson    = smartLookup('Contact Person', 'Officer', 'Contact');
     const contactAddress   = smartLookup('Contact Address', 'Address');
     const quantity         = smartLookup('Quantity');
@@ -1012,15 +1021,23 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
       if (emdMatch) emdFallback = emdMatch[1].trim();
     }
     if (!periodFallback) {
-      // Also check aiSummaryFields under alternate period keys
-      periodFallback =
-        aiSummaryFields['Completion Period'] ||
-        aiSummaryFields['Contract Period'] ||
-        aiSummaryFields['Work Completion Period'] ||
-        aiSummaryFields['Completion period'] || '';
+      // Check aiSummaryFields under all period key variants (now includes referral values)
+      for (const key of [
+        'Completion Period', 'Contract Period', 'Work Completion Period',
+        'Period of Contract', 'Period of Completion', 'Time for Completion',
+        'Contract Duration', 'Contract Tenure', 'Work Period', 'Works Period',
+        'Project Duration', 'Delivery Period', 'Period of Work', 'Agreement Period',
+        'Work Order Period', 'Time Period', 'Completion period', 'Duration', 'Time Limit', 'Period'
+      ]) {
+        if (aiSummaryFields[key]) { periodFallback = aiSummaryFields[key]; break; }
+      }
     }
     if (!periodFallback) {
-      const periodMatch = document.body.innerText.match(/(?:completion|contract)\s+period[^:\n]*[:]\s*([^\n]{3,60})/i);
+      // Broad page-text regex — catches "Completion Period: 12 Months" and similar
+      const periodMatch =
+        document.body.innerText.match(/(?:completion|contract|work(?:s)?|project|delivery|agreement)\s+(?:period|duration|tenure|time)[^:\n]*[:\-]\s*([^\n]{3,80})/i) ||
+        document.body.innerText.match(/period\s+of\s+(?:contract|completion|work)[^:\n]*[:\-]\s*([^\n]{3,80})/i) ||
+        document.body.innerText.match(/time\s+for\s+completion[^:\n]*[:\-]\s*([^\n]{3,80})/i);
       if (periodMatch) periodFallback = periodMatch[1].trim();
     }
 
@@ -1307,18 +1324,19 @@ export async function fetchOverviewByDetailUrl(
   detailUrl: string,
   t247Id: string
 ): Promise<OverviewRefreshResult> {
-  // Always start with a fresh browser — prevents "Connection closed" race condition
-  // when a background fetch is still running and sharing the same browser instance.
-  if (browserInstance) {
-    try { await browserInstance.close(); } catch { /* already dead */ }
-    browserInstance = null;
-  }
-
-  const browser = await getBrowser();
-  const page = await browser.newPage();
+  // Launch a dedicated browser for this one-off refresh — never kill the shared
+  // browserInstance, which may be in use by a concurrent background scrape run.
+  const localBrowser = await puppeteer.launch({
+    headless: true,
+    args: [
+      '--no-sandbox', '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage', '--disable-gpu',
+      '--window-size=1366,768',
+    ],
+  });
+  const page = await localBrowser.newPage();
   try {
     await page.setViewport({ width: 1366, height: 768 });
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
     await page.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
@@ -1358,5 +1376,6 @@ export async function fetchOverviewByDetailUrl(
     };
   } finally {
     await page.close();
+    await localBrowser.close();
   }
 }
