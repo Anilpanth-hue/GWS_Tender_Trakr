@@ -10,7 +10,7 @@ export type BidStatus =
   | "tender_awarded"
   | "not_awarded";
 export type ScreeningDecision = "accepted" | "rejected" | "pending";
-export type FetchSession = "morning" | "afternoon" | "live" | "manual";
+export type FetchSession = "morning" | "afternoon" | "live" | "manual" | "scheduled";
 
 export interface RawTender {
   title: string;
