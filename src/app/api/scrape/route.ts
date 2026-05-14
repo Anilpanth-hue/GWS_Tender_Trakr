@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
     const settings: Record<string, string> = {};
     for (const s of settingRows) settings[s.setting_key] = s.setting_value;
 
-    const maxTenders = parseInt(settings.scrape_max_tenders || '100', 10);
+    const maxTenders = parseInt(settings.scrape_max_tenders || '200', 10);
 
     const result = await execute('INSERT INTO scrape_runs (session, status) VALUES (?, ?)', [session, 'running']);
     const fetchRunId = result.insertId;
