@@ -86,7 +86,8 @@ export async function POST(
     }
 
     // Detect corrigendum / date extension
-    const oldDueDate = tender.due_date?.split('T')[0] ?? null;
+    // MySQL2 may return DATE columns as JS Date objects — coerce to string before split
+    const oldDueDate = tender.due_date ? String(tender.due_date).split('T')[0] : null;
     const dateChanged = newDueDate && oldDueDate && newDueDate !== oldDueDate;
     const changes: string[] = [];
     if (dateChanged) changes.push(`Due date: ${oldDueDate} → ${newDueDate}`);
