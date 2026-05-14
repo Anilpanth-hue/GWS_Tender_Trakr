@@ -43,8 +43,12 @@ const STATE_GOVT_EXCEPTION_KEYWORDS = [
 const OIL_COMPANIES = ['IOCL', 'HPCL', 'BPCL', 'Indian Oil', 'Hindustan Petroleum', 'Bharat Petroleum'];
 
 function containsAny(text: string, keywords: string[]): string[] {
-  const textLower = text.toLowerCase();
-  return keywords.filter(kw => textLower.includes(kw.toLowerCase()));
+  return keywords.filter(kw => {
+    // Word-boundary match so short keywords like "Port", "CHA", "Wood" don't
+    // fire on substrings like "transportation", "Chapra", "firewood".
+    const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+  });
 }
 
 function isStateGovtOrganization(issuedBy: string): boolean {
