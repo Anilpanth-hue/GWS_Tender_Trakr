@@ -45,9 +45,7 @@ export async function loginBrowser(email: string, password: string): Promise<Bro
   const browser = await getBrowser();
   const page = await browser.newPage();
   await page.setViewport({ width: 1366, height: 768 });
-  await page.setUserAgent(
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  );
+  await page.setUserAgent({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' });
   const ok = await login(page, email, password);
   await page.close();
   if (!ok) throw new Error('Tender247 login failed — check credentials in Settings.');
@@ -409,10 +407,7 @@ export async function fetchTenderDocuments(
 
   try {
     await page.setViewport({ width: 1366, height: 768 });
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+    await page.setUserAgent({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' });
 
     // Enable CDP download interception on this page
     const client = await page.createCDPSession();
@@ -1080,9 +1075,7 @@ export async function fetchSingleTenderById(
 
   try {
     await page.setViewport({ width: 1366, height: 768 });
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+    await page.setUserAgent({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' });
 
     const loggedIn = await login(page, email, password);
     if (!loggedIn) throw new Error('Failed to login to Tender247. Please check credentials in Settings.');
@@ -1236,9 +1229,7 @@ export async function fetchAllTenders(
 
   try {
     await page.setViewport({ width: 1366, height: 768 });
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+    await page.setUserAgent({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' });
 
     const loggedIn = await login(page, email, password);
     if (!loggedIn) {
@@ -1269,9 +1260,7 @@ export async function fetchDetailPageData(
   const page = await browser.newPage();
   try {
     await page.setViewport({ width: 1366, height: 768 });
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+    await page.setUserAgent({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' });
     const stopCapture = startApiCapture(page);
     await page.goto(detailUrl, { waitUntil: 'networkidle2', timeout: 30000 });
     await new Promise(r => setTimeout(r, 2000));

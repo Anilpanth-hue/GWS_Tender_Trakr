@@ -2,24 +2,27 @@
  * Debug script: modal-based login with React input handling.
  * Run: npx tsx scripts/debug-scraper.ts
  */
-import puppeteer from 'puppeteer';
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
+
+import puppeteer, { type Page } from 'puppeteer';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const EMAIL = 'ashutosh.jha@glasswing.in';
-const PASSWORD = 'BDlGRT1N9d';
+const EMAIL = process.env.TENDER247_EMAIL ?? '';
+const PASSWORD = process.env.TENDER247_PASSWORD ?? '';
 const OUT_DIR = './debug-screenshots';
 
 if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR);
 
-async function screenshot(page: puppeteer.Page, name: string) {
+async function screenshot(page: Page, name: string) {
   const file = path.join(OUT_DIR, `${name}.png`);
   await page.screenshot({ path: file, fullPage: true });
   console.log(`  📸 ${file}`);
 }
 
 /** Fill a React-controlled input by triggering the native value setter */
-async function fillReactInput(page: puppeteer.Page, selector: string, value: string) {
+async function fillReactInput(page: Page, selector: string, value: string) {
   await page.evaluate((sel: string, val: string) => {
     const el = document.querySelector<HTMLInputElement>(sel);
     if (!el) return;
@@ -42,9 +45,7 @@ async function run() {
   });
 
   const page = await browser.newPage();
-  await page.setUserAgent(
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  );
+  await page.setUserAgent({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' });
 
   try {
     // 1. Homepage

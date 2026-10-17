@@ -5,19 +5,19 @@
 import * as dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
-import puppeteer from 'puppeteer';
+import puppeteer, { type Page } from 'puppeteer';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const EMAIL = 'ashutosh.jha@glasswing.in';
-const PASSWORD = 'BDlGRT1N9d';
+const EMAIL = process.env.TENDER247_EMAIL ?? '';
+const PASSWORD = process.env.TENDER247_PASSWORD ?? '';
 const TENDER_ID = 426;
 const DETAIL_URL = 'https://www.tender247.com/auth/tender/98884609/6f8e3e69-77f2-4a19-adcb-5052b61777d2?tesd=24-04-2026';
 const OUT_DIR = path.resolve('./debug-docfetch');
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
-async function fillReactInput(page: puppeteer.Page, selector: string, value: string) {
+async function fillReactInput(page: Page, selector: string, value: string) {
   await page.evaluate((sel: string, val: string) => {
     const el = document.querySelector<HTMLInputElement>(sel);
     if (!el) return;
@@ -36,7 +36,7 @@ async function run() {
   });
 
   const page = await browser.newPage();
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36');
+  await page.setUserAgent({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' });
 
   // Track ALL requests/responses
   page.on('request', req => {
@@ -107,21 +107,24 @@ async function run() {
 
     await page.setRequestInterception(true);
 
-    let capturedReq: {
+    type CapturedRequest = {
       url: string; method: string;
       headers: Record<string, string>; postData: string | undefined;
-    } | null = null;
+    };
+    // Assigned inside the event handler, so TS can't track it — annotate via cast
+    let capturedReq = null as CapturedRequest | null;
 
-    page.on('request', req => {
+    page.on('request', async req => {
       const url = req.url();
       if (url.includes('pdf-download') && req.method() === 'POST') {
+        const postData = await req.fetchPostData();
         capturedReq = {
           url, method: req.method(),
           headers: { ...req.headers() },
-          postData: req.postData() ?? undefined,
+          postData,
         };
         console.log(`   Captured PDF POST: ${url.substring(0, 80)}`);
-        console.log(`   Post body: ${(req.postData() || '').substring(0, 200)}`);
+        console.log(`   Post body: ${(postData || '').substring(0, 200)}`);
       }
       req.continue();
     });
