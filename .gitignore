@@ -66,3 +66,6 @@ coverage/
 # ─── Misc ─────────────────────────────────────────────────────────────────────
 *.pem
 .vercel
+
+# ─── Local deploy script (machine-specific paths) ─────────────────────────────
+deploy.sh
