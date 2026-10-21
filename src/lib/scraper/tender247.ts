@@ -841,7 +841,7 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
         .filter(el => el.children.length <= 1);
 
       for (const el of leafEls) {
-        const labelText = (el.textContent || '').trim().replace(/\s+/g, ' ');
+        const labelText = (el.textContent || '').trim().replace(/\s+/g, ' ').replace(/\s*:+$/, '').trim();
         // Skip: empty, pure separator, starts with ₹/digit (it's a value), too long, junk
         if (!labelText || labelText === ':' || labelText.length > 80) continue;
         if (/^[₹\d•]/.test(labelText) || isJunk(labelText)) continue;
@@ -1025,6 +1025,17 @@ async function extractTenderDetailPage(page: Page, t247Id: string): Promise<Sing
         'Work Order Period', 'Time Period', 'Completion period', 'Duration', 'Time Limit', 'Period'
       ]) {
         if (aiSummaryFields[key]) { periodFallback = aiSummaryFields[key]; break; }
+      }
+    }
+    if (!periodFallback) {
+      // Partial-key scan — catches labels like "Completion Period (months)", "Time for Completion (Days)", etc.
+      for (const [k, v] of Object.entries(aiSummaryFields)) {
+        const kl = k.toLowerCase();
+        if (/\b(period|duration|completion|contract)\b/.test(kl) && v &&
+            !/\b(eligib|financial|turnover|experience|technical|pre.qualif|pqc|payment|penalty|submission|opening)\b/.test(kl)) {
+          periodFallback = v;
+          break;
+        }
       }
     }
     if (!periodFallback) {

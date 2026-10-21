@@ -34,6 +34,37 @@ import type { Tender, PaginatedResponse } from "@/types";
 import Link from "next/link";
 
 /* ── Helpers ──────────────────────────────────────────────────── */
+function formatEmdDisplay(emdValue?: string, emdAmount?: string): string {
+  if (emdValue) return emdValue;
+  if (!emdAmount) return '';
+  const n = Number(emdAmount.replace(/[^0-9]/g, ''));
+  if (isNaN(n) || n === 0) return emdAmount;
+  if (n >= 10_000_000) return `₹${(n / 10_000_000).toFixed(2)} Cr`;
+  if (n >= 100_000) return `₹${(n / 100_000).toFixed(2)} Lakh`;
+  return `₹${n.toLocaleString('en-IN')}`;
+}
+
+function pickContractPeriod(fields?: Record<string, string> | null): string {
+  if (!fields) return '';
+  const exact = [
+    'Contract Period', 'Completion Period', 'Work Completion Period',
+    'Period of Contract', 'Period of Completion', 'Time for Completion',
+    'Contract Duration', 'Contract Tenure', 'Work Period', 'Works Period',
+    'Project Duration', 'Delivery Period', 'Period of Work', 'Agreement Period',
+    'Work Order Period', 'Time Period', 'Duration', 'Time Limit', 'Period',
+  ];
+  for (const k of exact) {
+    if (fields[k]) return fields[k];
+  }
+  for (const [k, v] of Object.entries(fields)) {
+    if (/\b(period|duration|completion|contract)\b/i.test(k) && v &&
+        !/\b(eligib|financial|turnover|experience|technical|submission|opening)\b/i.test(k)) {
+      return v;
+    }
+  }
+  return '';
+}
+
 function dueDateStyle(d: string | null) {
   if (!d) return { color: "#94a3b8", label: null };
   const days = getDaysUntilDue(d);
@@ -321,12 +352,12 @@ function PreviewPanel({
               {
                 icon: Banknote,
                 label: "EMD Value",
-                value: overview?.Emd_Amount || overview?.emdValue || "—",
+                value: formatEmdDisplay(overview?.emdValue, overview?.Emd_Amount) || "—",
               },
               {
                 icon: Clock,
                 label: "Contract Period",
-                value: overview?.completionPeriod || "—",
+                value: overview?.completionPeriod || pickContractPeriod(overview?.aiSummaryFields) || "—",
               },
             ].map(({ icon: Icon, label, value, mono, sub, color }) => (
               <div

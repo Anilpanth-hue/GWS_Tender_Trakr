@@ -127,7 +127,9 @@ function WinBadge({ text }: { text: string }) {
 }
 
 /* ── Documents Panel ─────────────────────────────────────────── */
-function DocumentsPanel({ tenderId, detailUrl }: { tenderId: number; detailUrl: string }) {
+function DocumentsPanel({ tenderId, detailUrl, onDocsLoaded }: {
+  tenderId: number; detailUrl: string; onDocsLoaded?: (count: number) => void;
+}) {
   const [docs, setDocs]         = useState<TenderDocument[]>([]);
   const [loading, setLoading]   = useState(true);
   const [fetching, setFetching] = useState(false);
@@ -139,6 +141,7 @@ function DocumentsPanel({ tenderId, detailUrl }: { tenderId: number; detailUrl: 
     const json = await r.json();
     const list: TenderDocument[] = json.data || [];
     setDocs(list);
+    onDocsLoaded?.(list.length);
     return list;
   };
 
@@ -358,6 +361,94 @@ function ContactSection({
   );
 }
 
+/* ── No Docs Warning Modal ──────────────────────────────────── */
+function NoDocsWarningModal({ onClose, onGoFetch }: { onClose: () => void; onGoFetch: () => void }) {
+  return (
+    <AnimatePresence>
+      <motion.div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)' }}
+      >
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95, y: 12 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.95, y: 12 }}
+          transition={{ type: 'spring', bounce: 0.2, duration: 0.35 }}
+          className="w-full max-w-md rounded-2xl overflow-hidden"
+          style={{ background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4"
+            style={{ borderBottom: '1px solid #f1f5f9', background: 'rgba(217,119,6,0.03)' }}>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+                style={{ background: 'rgba(217,119,6,0.08)', border: '1px solid rgba(217,119,6,0.2)' }}>
+                <FileDown className="w-4 h-4" style={{ color: '#d97706' }} />
+              </div>
+              <div>
+                <p className="text-[13.5px] font-bold" style={{ color: '#0f172a' }}>Documents Required</p>
+                <p className="text-[11px]" style={{ color: '#94a3b8' }}>Needed before AI analysis</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-1.5 rounded-lg transition-colors hover:bg-slate-100">
+              <X className="w-4 h-4" style={{ color: '#94a3b8' }} />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-5">
+            <div className="flex flex-col items-center text-center gap-4 py-2">
+              <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+                style={{ background: 'rgba(217,119,6,0.06)', border: '1px solid rgba(217,119,6,0.15)' }}>
+                <AlertCircle className="w-7 h-7" style={{ color: '#d97706' }} />
+              </div>
+              <div>
+                <p className="text-[15px] font-semibold mb-2" style={{ color: '#0f172a' }}>
+                  No documents downloaded yet
+                </p>
+                <p className="text-[12.5px] leading-relaxed" style={{ color: '#64748b' }}>
+                  AI analysis reads the tender document to generate the GWS intelligence report.
+                  Please fetch the documents first using the{' '}
+                  <strong style={{ color: '#0284c7' }}>Fetch Documents</strong> button in the
+                  Documents section below.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 mt-6">
+              <button
+                onClick={onClose}
+                className="flex-1 py-2.5 rounded-xl text-[13px] font-medium transition-colors"
+                style={{ background: '#f8fafc', border: '1px solid #e2e8f0', color: '#64748b' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#f1f5f9')}
+                onMouseLeave={e => (e.currentTarget.style.background = '#f8fafc')}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={onGoFetch}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all"
+                style={{
+                  background: 'linear-gradient(135deg, #0284c7, #0369a1)',
+                  boxShadow: '0 2px 12px rgba(2,132,199,0.35)',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
+                onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+              >
+                <Download className="w-3.5 h-3.5" /> Go to Documents
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
 /* ── Assign Owner Modal ──────────────────────────────────────── */
 function AssignOwnerModal({
   tenderId,
@@ -537,6 +628,8 @@ export default function AnalysisDetailPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError]       = useState<string | null>(null);
   const [docsKey, setDocsKey]   = useState(0);
+  const [docsCount, setDocsCount] = useState(-1);
+  const [showNoDocsWarning, setShowNoDocsWarning] = useState(false);
   const [showOwnerModal, setShowOwnerModal] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMsg, setRefreshMsg] = useState<string | null>(null);
@@ -667,7 +760,7 @@ export default function AnalysisDetailPage() {
           <div className="flex-shrink-0 flex flex-col items-end gap-2">
             {!tender.l2Analyzed ? (
               <button
-                onClick={runAnalysis}
+                onClick={() => { if (docsCount === 0) { setShowNoDocsWarning(true); return; } runAnalysis(); }}
                 disabled={analyzing}
                 className="btn-primary disabled:opacity-50"
               >
@@ -681,7 +774,7 @@ export default function AnalysisDetailPage() {
                   <Sparkles className="w-3.5 h-3.5" /> Analyzed
                 </span>
                 <button
-                  onClick={runAnalysis}
+                  onClick={() => { if (docsCount === 0) { setShowNoDocsWarning(true); return; } runAnalysis(); }}
                   disabled={analyzing}
                   className="flex items-center gap-1 text-[11.5px] transition-colors"
                   style={{ color: '#94a3b8' }}
@@ -788,8 +881,8 @@ export default function AnalysisDetailPage() {
       )}
 
       {/* ── Documents ────────────────────────────────────────── */}
-      <div className="mb-5">
-        <DocumentsPanel key={docsKey} tenderId={tender.id} detailUrl={tender.detailUrl} />
+      <div className="mb-5" id="docs-panel">
+        <DocumentsPanel key={docsKey} tenderId={tender.id} detailUrl={tender.detailUrl} onDocsLoaded={setDocsCount} />
       </div>
 
       {/* ── Empty state ──────────────────────────────────────── */}
@@ -809,7 +902,11 @@ export default function AnalysisDetailPage() {
           <p className="text-[13px] max-w-xs mb-5" style={{ color: '#94a3b8' }}>
             Click &quot;Run AI Analysis&quot; to generate a GWS-specific intelligence report from the tender document.
           </p>
-          <button onClick={runAnalysis} disabled={analyzing} className="btn-primary">
+          <button
+            onClick={() => { if (docsCount === 0) { setShowNoDocsWarning(true); return; } runAnalysis(); }}
+            disabled={analyzing}
+            className="btn-primary"
+          >
             <Microscope className="w-3.5 h-3.5" /> Run AI Analysis
           </button>
         </motion.div>
@@ -991,6 +1088,19 @@ export default function AnalysisDetailPage() {
         </div>
       )}
     </div>
+
+    {/* ── No Docs Warning Modal ──────────────────────────── */}
+    {showNoDocsWarning && (
+      <NoDocsWarningModal
+        onClose={() => setShowNoDocsWarning(false)}
+        onGoFetch={() => {
+          setShowNoDocsWarning(false);
+          setTimeout(() => {
+            document.getElementById('docs-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 150);
+        }}
+      />
+    )}
 
     {/* ── Assign Owner Modal ─────────────────────────────── */}
     {showOwnerModal && (

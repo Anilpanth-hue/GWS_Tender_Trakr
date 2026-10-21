@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     // Fire-and-forget background pipeline — mirrors /api/scrape POST exactly
     (async () => {
       try {
-        const { fetchAllTenders, fetchDetailPageData, getBrowserInstance, closeBrowser } =
+        const { fetchAllTenders, fetchDetailPageData, getBrowserInstance } =
           await import('@/lib/scraper/tender247');
         const { screenTender, DEFAULT_CONFIG } = await import('@/lib/screening/rules');
         const { analyzeL1 } = await import('@/lib/ai/l1-analyze');

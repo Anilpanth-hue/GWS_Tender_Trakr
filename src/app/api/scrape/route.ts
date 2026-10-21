@@ -71,6 +71,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json() as { session?: string };
     const session = body.session || 'manual';
 
+    const [running] = await query<{ id: number }>(
+      "SELECT id FROM scrape_runs WHERE status = 'running' ORDER BY started_at DESC LIMIT 1"
+    );
+    if (running) {
+      return NextResponse.json<ApiResponse>(
+        { error: `A fetch run (#${running.id}) is already in progress. Please wait for it to complete.` },
+        { status: 409 }
+      );
+    }
+
     const { fetchAllTenders, fetchDetailPageData, getBrowserInstance, closeBrowser } =
       await import('@/lib/scraper/tender247');
     const { screenTender, DEFAULT_CONFIG } = await import('@/lib/screening/rules');

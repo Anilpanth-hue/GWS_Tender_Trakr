@@ -64,19 +64,14 @@ export async function POST(
       );
     }
 
-    const { fetchOverviewByDetailUrl, closeBrowser } = await import('@/lib/scraper/tender247');
+    const { fetchOverviewByDetailUrl } = await import('@/lib/scraper/tender247');
 
-    let result;
-    try {
-      result = await fetchOverviewByDetailUrl(
-        settings.tender247_email,
-        settings.tender247_password,
-        detailUrl,
-        tender.tender_no
-      );
-    } finally {
-      await closeBrowser();
-    }
+    const result = await fetchOverviewByDetailUrl(
+      settings.tender247_email,
+      settings.tender247_password,
+      detailUrl,
+      tender.tender_no
+    );
 
     const { overview, dueDate: newDueDate, estimatedCostRaw: newValueRaw } = result;
 
