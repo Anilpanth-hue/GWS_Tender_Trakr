@@ -5,7 +5,7 @@ node_modules/
 .yarn/install-state.gz
 
 # ─── Next.js build output ─────────────────────────────────────────────────────
-.next/
+.next/cache/
 out/
 
 # ─── Environment variables (NEVER commit these) ───────────────────────────────
