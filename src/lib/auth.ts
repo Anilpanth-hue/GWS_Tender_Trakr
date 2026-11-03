@@ -35,7 +35,7 @@ async function touchLastLogin(email: string): Promise<void> {
 }
 
 export const authOptions: NextAuthOptions = {
-  useSecureCookies: true,
+  useSecureCookies: process.env.NEXTAUTH_URL?.startsWith('https://') ?? false,
   providers: [
     AzureADProvider({
       clientId:     process.env.AZURE_AD_CLIENT_ID!,
